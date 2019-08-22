@@ -22,8 +22,16 @@ void ConvolutionLayer<Dtype>::compute_output_shape() {
 }
 
 template <typename Dtype>
+void ConvolutionLayer<Dtype>::QuantizeWeights_cpu() {
+  NOT_IMPLEMENTED;
+}
+
+template <typename Dtype>
 void ConvolutionLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
+  if (this->layer_param_.has_quantize_param()) {
+    QuantizeWeights_cpu();
+  }
   const Dtype* weight = this->blobs_[0]->cpu_data();
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->cpu_data();

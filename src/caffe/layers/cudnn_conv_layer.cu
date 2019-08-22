@@ -10,6 +10,10 @@ __global__ void sync_conv_groups() { }
 template <typename Dtype>
 void CuDNNConvolutionLayer<Dtype>::Forward_gpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+  if (this->layer_param_.has_quantize_param()) {
+    // use top data to store temporary buffer.
+    this->QuantizeWeights_gpu(top[0]->mutable_gpu_data());
+  }
   const Dtype* weight = this->blobs_[0]->gpu_data();
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->gpu_data();

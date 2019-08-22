@@ -10,105 +10,14 @@
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/layers/quantize_layer.hpp"
 #include "caffe/util/gpu_util.cuh"
+#include "caffe/util/quantize_util.cuh"
 
 namespace caffe {
 
 #define STATS_BINS 2048
 
-__device__ unsigned int counter = 0;
-
 template <typename Dtype>
-inline __device__ Dtype MaxData4(const Dtype* data, unsigned int index, bool abs);
-
-template <>
-inline __device__
-float MaxData4(const float* data, unsigned int index, bool abs) {
-  float4 val = ((float4*)data)[index];
-  if (abs)
-    return max(max(max(fabs(val.x), fabs(val.y)), fabs(val.z)), fabs(val.w));
-  else
-    return max(max(max(val.x, val.y), val.z), val.w);
-}
-
-template <>
-inline __device__
-double MaxData4(const double* data, unsigned int index, bool abs) {
-  double4 val = ((double4*)data)[index];
-  if (abs)
-    return max(max(max(fabs(val.x), fabs(val.y)), fabs(val.z)), fabs(val.w));
-  else
-    return max(max(max(val.x, val.y), val.z), val.w);
-}
-
-template <typename Dtype>
-inline __device__ void ReduceMax(Dtype* data) {
-  for (unsigned int i = blockDim.x / 2; i > 0; i >>= 1) {
-    if (threadIdx.x < i) {
-      data[threadIdx.x] = max(data[threadIdx.x], data[threadIdx.x + i]);
-    }
-    __syncthreads();
-  }
-}
-
-template <typename Dtype>
-inline __device__ void ReduceSum(Dtype* data) {
-  for (unsigned int i = blockDim.x / 2; i > 0; i >>= 1) {
-    if (threadIdx.x < i) {
-      data[threadIdx.x] += data[threadIdx.x] + data[threadIdx.x + i];
-    }
-    __syncthreads();
-  }
-}
-
-template <typename Dtype>
-inline __device__ void ThreadMax(const Dtype* in, Dtype* out, 
-    unsigned int count, unsigned int start, unsigned int stride, bool abs) {
-  Dtype tmp = 0;
-  for (unsigned int i = start; i < count / 4; i += stride) {
-    tmp = max(tmp, MaxData4(in, i, abs));
-  }
-  // process remaining elements
-  for (unsigned int i = start + count / 4 * 4; i < count; i += 4) {
-    tmp = max(tmp, in[i]);
-  }
-  out[threadIdx.x] = tmp; 
-  __syncthreads();
-}
-
-template <typename Dtype> 
-inline __device__ void IncBlock(const Dtype* in, Dtype* out, 
-    unsigned int* counter, bool* flag) {
-  if (threadIdx.x == 0) {
-    *out = *in;
-    __threadfence();
-    unsigned int value = atomicInc(counter, gridDim.x); // accumulate how many blocks have down
-    *flag = (value == (gridDim.x - 1));
-  }
-  __syncthreads();
-}
-
-template <typename Dtype>
-static __global__ void QuantizeGetAbsMax(const Dtype* data, int count, 
-    Dtype* tmp_storage, Dtype* abs_max) {
-  __shared__ Dtype buffer[CAFFE_CUDA_NUM_THREADS];
-  __shared__ bool is_lastblock_done;
-  unsigned int gid = blockDim.x * blockIdx.x + threadIdx.x;
-  ThreadMax(data, buffer, count, gid, blockDim.x * gridDim.x, true);
-  // Reduce max on a single thread block in shared memory.
-  ReduceMax(buffer);
-  // Use last block to conduct max reduce across blocks.
-  IncBlock(buffer, tmp_storage + blockIdx.x, &counter, &is_lastblock_done);
-  if (is_lastblock_done) {
-    ThreadMax(tmp_storage, buffer, gridDim.x, threadIdx.x, blockDim.x, false);
-    ReduceMax(buffer);
-    if (threadIdx.x == 0) {
-      *abs_max = buffer[0];
-    }
-  }
-}
-
-template <typename Dtype>
-static __global__ void QuantizeGetHist(const Dtype* data, int count,
+static __global__ void GetHist(const Dtype* data, int count,
     int num_bins, Dtype* abs_max, Dtype* hist) {
   // Generate data distribution
   Dtype step = *abs_max / num_bins; 
@@ -135,7 +44,7 @@ static __global__ void QuantizeGetHist(const Dtype* data, int count,
 }
 
 template <typename Dtype>
-static __global__ void QuantizeMinimizeKLDivs(const Dtype* hist, int num_bins, 
+static __global__ void MinimizeKLDivs(const Dtype* hist, int num_bins, 
     int num_quant_bins, int num_kl_divs, Dtype tolerance, Dtype* kl_divs, 
     const Dtype* abs_max, Dtype* final_step) {
   __shared__ Dtype kl_buffer[CAFFE_CUDA_NUM_THREADS];
@@ -195,7 +104,7 @@ static __global__ void QuantizeMinimizeKLDivs(const Dtype* hist, int num_bins,
   
   ReduceSum(kl_buffer);
  
-  IncBlock(kl_buffer, kl_divs + blockIdx.x, &counter, &is_lastblock_done);
+  IncBlock(kl_buffer, kl_divs + blockIdx.x, &is_lastblock_done);
 
   // Use last block to conduct max reduce across kl_divs.
   if (is_lastblock_done) {
@@ -219,14 +128,6 @@ static __global__ void QuantizeMinimizeKLDivs(const Dtype* hist, int num_bins,
   }
 }
 
-template<typename Dtype>
-static __global__ void Quantize(const Dtype* input, int count, 
-    Dtype step, Dtype min_val, Dtype max_val, Dtype* output) {
-  CUDA_KERNEL_LOOP(index, count) {
-    output[index] = min(max(round(input[index] / step) * step, max_val), min_val);
-  }
-}
-
 template <typename Dtype>
 void QuantizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
@@ -244,20 +145,20 @@ void QuantizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     Dtype* step_data = this->blobs_[0]->mutable_gpu_data(); 
 
     // Find the max abs data
-    QuantizeGetAbsMax<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+    GetAbsMax<Dtype><<<CAFFE_GET_BLOCKS(count/4), CAFFE_CUDA_NUM_THREADS>>>(
         bottom_data, count, workspace_data, step_data);
     CUDA_POST_KERNEL_CHECK;
     DLOG(INFO) << "Abs Max value is " << this->blobs_[0]->cpu_data()[0];
    
     // Gererate histgram from input data
-    QuantizeGetHist<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+    GetHist<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
         bottom_data, count, STATS_BINS, step_data, hist_data);
     CUDA_POST_KERNEL_CHECK;
 
     // Find the optimal threshold by minimizing KL_divergence.
     int num_quant_bins = positive_?(1 << precision_):(1 << (precision_ - 1));
     kl_divs_.Reshape(vector<int>(1, STATS_BINS - num_quant_bins));
-    QuantizeMinimizeKLDivs<Dtype><<<STATS_BINS - num_quant_bins, CAFFE_CUDA_NUM_THREADS>>>(
+    MinimizeKLDivs<Dtype><<<STATS_BINS - num_quant_bins, CAFFE_CUDA_NUM_THREADS>>>(
         hist_data, STATS_BINS, num_quant_bins, STATS_BINS - num_quant_bins, 
         tolerance_, kl_divs_.mutable_gpu_data(), step_data, 
         this->blobs_[0]->mutable_gpu_data());
