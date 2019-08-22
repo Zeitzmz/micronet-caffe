@@ -269,7 +269,7 @@ void QuantizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   Dtype step = this->blobs_[0]->mutable_cpu_data()[0];
   if (positive_) {
     min_ = Dtype(0);
-    max_ = -(1 << (precision_ - 1)) * step;
+    max_ = ((1 << precision_) - 1) * step;
   } else {
     min_ = -(1 << (precision_ - 1)) * step;
     max_ = ((1 << (precision_ - 1)) - 1) * step;
