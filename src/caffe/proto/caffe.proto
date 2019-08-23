@@ -836,6 +836,9 @@ message ImageDataParameter {
   // data.
   optional bool mirror = 6 [default = false];
   optional string root_folder = 12 [default = ""];
+ 
+  // Resize image's short edge and keep ratio.
+  optional uint32 short_edge = 13 [default = 0];
 }
 
 message InfogainLossParameter {

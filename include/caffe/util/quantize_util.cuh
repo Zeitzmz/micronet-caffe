@@ -11,7 +11,7 @@ inline __device__
 float MaxData4(const float* data, unsigned int index, bool abs) {
   float4 val = ((float4*)data)[index];
   if (abs)
-    return max(max(max(fabs(val.x), fabs(val.y)), fabs(val.z)), fabs(val.w));
+    return max(max(max(fabsf(val.x), fabsf(val.y)), fabsf(val.z)), fabsf(val.w));
   else
     return max(max(max(val.x, val.y), val.z), val.w);
 }
@@ -95,10 +95,16 @@ __global__ void GetAbsMax(const Dtype* data, int count,
 }
 
 template<typename Dtype>
+inline __device__ Dtype quantize_op(const Dtype* input, Dtype step,
+    Dtype min_val, Dtype max_val) {
+  return min(max(round(*input / step) * step, max_val), min_val);
+}
+
+template<typename Dtype>
 __global__ void Quantize(const Dtype* input, int count, 
     Dtype step, Dtype min_val, Dtype max_val, Dtype* output) {
   CUDA_KERNEL_LOOP(index, count) {
-    output[index] = min(max(round(input[index] / step) * step, max_val), min_val);
+    output[index] = quantize_op(input + index, step, min_val, max_val);
   }
 }
 

@@ -51,7 +51,7 @@ class QuantizeLayer : public NeuronLayer<Dtype> {
   bool channel_shared_;
   float tolerance_;
   
-  Blob<Dtype> hist_;
+  Blob<unsigned int> hist_;
   Blob<Dtype> kl_divs_;
   Blob<Dtype> workspace_;
 

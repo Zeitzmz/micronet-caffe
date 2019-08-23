@@ -9,7 +9,6 @@
 
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/layers/quantize_layer.hpp"
-#include "caffe/util/gpu_util.cuh"
 #include "caffe/util/quantize_util.cuh"
 
 namespace caffe {
@@ -18,10 +17,10 @@ namespace caffe {
 
 template <typename Dtype>
 static __global__ void GetHist(const Dtype* data, int count,
-    int num_bins, Dtype* abs_max, Dtype* hist) {
+    int num_bins, Dtype* abs_max, unsigned int* hist) {
   // Generate data distribution
   Dtype step = *abs_max / num_bins; 
-  __shared__ Dtype hist_buffer[STATS_BINS];
+  __shared__ unsigned int hist_buffer[STATS_BINS];
   for (unsigned int i = threadIdx.x; i < num_bins; i += blockDim.x) {
     hist_buffer[i] = 0;
   }
@@ -31,20 +30,20 @@ static __global__ void GetHist(const Dtype* data, int count,
       gid < count; gid += blockDim.x * gridDim.x) {
     Dtype abs_data = fabs(data[gid]);
     if (abs_data > Dtype(0.0001)) {
-      int bin_index = max(abs_data / step, Dtype(num_bins - 1));
-      caffe_gpu_atomic_add(Dtype(1), hist_buffer + bin_index);
+      int bin_index = min(int(abs_data / step), num_bins - 1);
+      atomicAdd(hist_buffer + bin_index, 1);
     }
   }
   __syncthreads();
 
   // accumulate hist across blocks
   for (int i = threadIdx.x; i < num_bins; i += blockDim.x) {
-    caffe_gpu_atomic_add(hist_buffer[i], hist+i);
+    atomicAdd(hist+i, hist_buffer[i]);
   }
 }
 
 template <typename Dtype>
-static __global__ void MinimizeKLDivs(const Dtype* hist, int num_bins, 
+static __global__ void MinimizeKLDivs(const unsigned int* hist, int num_bins, 
     int num_quant_bins, int num_kl_divs, Dtype tolerance, Dtype* kl_divs, 
     const Dtype* abs_max, Dtype* final_step) {
   __shared__ Dtype kl_buffer[CAFFE_CUDA_NUM_THREADS];
@@ -140,7 +139,7 @@ void QuantizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     hist_.Reshape(vector<int>(1, STATS_BINS));
 
     Dtype* workspace_data = workspace_.mutable_gpu_data();
-    Dtype* hist_data = hist_.mutable_gpu_data();
+    unsigned int* hist_data = hist_.mutable_gpu_data();
     // use blobs[0] to storage temporary absmax value.
     Dtype* step_data = this->blobs_[0]->mutable_gpu_data(); 
 
