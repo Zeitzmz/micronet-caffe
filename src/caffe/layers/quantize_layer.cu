@@ -161,12 +161,12 @@ void QuantizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
         hist_data, STATS_BINS, num_quant_bins, STATS_BINS - num_quant_bins, 
         tolerance_, kl_divs_.mutable_gpu_data(), step_data, 
         this->blobs_[0]->mutable_gpu_data());
-    DLOG(INFO) << "Step = " << this->blobs_[0]->cpu_data()[0];
     CUDA_POST_KERNEL_CHECK;
+    DLOG(INFO) << "Step = " << this->blobs_[0]->cpu_data()[0];
   } 
 
   // Calculate lower and upper bound
-  Dtype step = this->blobs_[0]->mutable_cpu_data()[0];
+  Dtype step = this->blobs_[0]->cpu_data()[0];
   if (positive_) {
     min_ = Dtype(0);
     max_ = ((1 << precision_) - 1) * step;
@@ -178,6 +178,7 @@ void QuantizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   Quantize<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
       bottom[0]->gpu_data(), count, step, min_, max_, 
       top[0]->mutable_gpu_data());
+  CUDA_POST_KERNEL_CHECK;
 }
 
 template <typename Dtype>
