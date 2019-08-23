@@ -69,7 +69,9 @@ inline __device__ void IncBlock(const Dtype* in, Dtype* out, bool* flag) {
     *out = *in;
     __threadfence();
     unsigned int value = atomicInc(&block_counter, gridDim.x); // accumulate how many blocks have down
-    *flag = (value == (gridDim.x - 1));
+    bool last_block = (value == (gridDim.x - 1));
+    *flag = last_block;
+    if (last_block) block_counter = 0;
   }
   __syncthreads();
 }
