@@ -22,6 +22,7 @@ void QuantizeLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   positive_ = this->layer_param_.quantize_param().positive();
   channel_shared_ = this->layer_param_.quantize_param().channel_shared();
   tolerance_ = this->layer_param_.quantize_param().tolerance();
+  CHECK_GE(tolerance_, 1) << "Tolerance must greater or equal than 1.";
 
   if (this->phase_ == TRAIN) {
     CHECK_EQ(this->layer_param_.param_size(), 1);

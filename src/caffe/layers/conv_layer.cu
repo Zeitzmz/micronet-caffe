@@ -28,32 +28,37 @@ static __global__ void QuantizeChannel(const Dtype* in, Dtype* out,
 
 template <typename Dtype>
 void ConvolutionLayer<Dtype>::QuantizeWeights_gpu(Dtype *buffer) {
-  int precision = this->layer_param_.quantize_param().precision();
-  bool channel_shared = this->layer_param_.quantize_param().channel_shared();
-  int count = this->blobs_[0]->count();
-  Dtype* weights = this->blobs_[0]->mutable_gpu_data();
+  bool frozen = this->layer_param_.quantize_param().frozen();
+  if ((this->phase_ == TRAIN && !frozen) || 
+      (this->phase_ == TEST && !quantize_setup_)) {
+    int precision = this->layer_param_.quantize_param().precision();
+    bool channel_shared = this->layer_param_.quantize_param().channel_shared();
+    int count = this->blobs_[0]->count();
+    Dtype* weights = this->blobs_[0]->mutable_gpu_data();
 
-  if (channel_shared) {
-    CHECK_NOTNULL(buffer);
-    GetAbsMax<Dtype><<<CAFFE_GET_BLOCKS(count/4), CAFFE_CUDA_NUM_THREADS>>>(
-        weights, count, buffer, buffer);
-    CUDA_POST_KERNEL_CHECK;
-    
-    Dtype step;
-    caffe_copy(1, buffer, &step);
-    Dtype min_val = -(1 << (precision - 1)) * step;  
-    Dtype max_val = ((1 << (precision - 1)) - 1) * step;
+    if (channel_shared) {
+      CHECK_NOTNULL(buffer);
+      GetAbsMax<Dtype><<<CAFFE_GET_BLOCKS(count/4), CAFFE_CUDA_NUM_THREADS>>>(
+          weights, count, buffer, buffer);
+      CUDA_POST_KERNEL_CHECK;
+      
+      Dtype step;
+      caffe_copy(1, buffer, &step);
+      Dtype min_val = -(1 << (precision - 1)) * step;  
+      Dtype max_val = ((1 << (precision - 1)) - 1) * step;
 
-    Quantize<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-        weights, count, step, min_val, max_val, weights);
-    CUDA_POST_KERNEL_CHECK;
-  } else {
-    int dim = this->blobs_[0]->count(1);
-    int n = this->blobs_[0]->shape(0);
-    QuantizeChannel<<<n, CAFFE_CUDA_NUM_THREADS>>>(
-        weights, weights, dim, precision); 
-    CUDA_POST_KERNEL_CHECK;
-  }  
+      Quantize<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+          weights, count, step, min_val, max_val, weights);
+      CUDA_POST_KERNEL_CHECK;
+    } else {
+      int dim = this->blobs_[0]->count(1);
+      int n = this->blobs_[0]->shape(0);
+      QuantizeChannel<<<n, CAFFE_CUDA_NUM_THREADS>>>(
+          weights, weights, dim, precision); 
+      CUDA_POST_KERNEL_CHECK;
+    }
+    quantize_setup_ = true;
+  }
 }
 
 template <typename Dtype>
