@@ -96,6 +96,9 @@ static __global__ void MinimizeKLDivs(const unsigned int* hist, int num_bins,
   __syncthreads();
   
   ReduceSum(kl_buffer);
+  if (threadIdx.x == 0 && kl_buffer[0] == Dtype(0)) {
+    printf("ERROR: there is a kl_divergence equal to 0.");
+  }
  
   IncBlock(kl_buffer, kl_divs + blockIdx.x, &is_lastblock_done);
 
@@ -142,7 +145,9 @@ void QuantizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     GetAbsMax<Dtype><<<CAFFE_GET_BLOCKS(count/4), CAFFE_CUDA_NUM_THREADS>>>(
         bottom_data, count, workspace_data, step_data);
     CUDA_POST_KERNEL_CHECK;
-    DLOG(INFO) << "Abs Max value is " << this->blobs_[0]->cpu_data()[0];
+    DLOG(INFO) << "The maximum absolute value in layer " 
+               << this->layer_param_.name() << ": " 
+               << this->blobs_[0]->cpu_data()[0];
    
     // Generate histgram from input data
     GetHist<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
@@ -157,7 +162,9 @@ void QuantizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
         tolerance_, kl_divs_.mutable_gpu_data(), step_data, 
         this->blobs_[0]->mutable_gpu_data());
     CUDA_POST_KERNEL_CHECK;
-    DLOG(INFO) << "Step = " << this->blobs_[0]->cpu_data()[0];
+    DLOG(INFO) << "The step in layer " 
+               << this->layer_param_.name() << ": " 
+               << this->blobs_[0]->cpu_data()[0];
   } 
 
   // Calculate lower and upper bound
