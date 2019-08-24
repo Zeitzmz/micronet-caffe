@@ -50,14 +50,8 @@ static __global__ void MinimizeKLDivs(const unsigned int* hist, int num_bins,
   __shared__ bool is_lastblock_done; // flag refer to whether the last block
   kl_buffer[threadIdx.x] = 0;
 
-  for (int i = threadIdx.x; i < num_quant_bins; i += blockDim.x) {
-    int gid = blockIdx.x * blockDim.x + i;
-    if (gid >= num_kl_divs * num_quant_bins) 
-      break;
-    int kl_index = gid / num_quant_bins;
-    int bin_index = gid % num_quant_bins;
-    
-    Dtype num_merged_bins = Dtype(num_quant_bins + kl_index) / num_quant_bins;
+  for (int bin_index = threadIdx.x; bin_index < num_quant_bins; bin_index += blockDim.x) {
+    Dtype num_merged_bins = Dtype(num_quant_bins + blockIdx.x) / num_quant_bins;
     Dtype start_not_rounded = num_merged_bins * bin_index;
     Dtype end_not_rounded = start_not_rounded + num_merged_bins;
 
@@ -70,7 +64,7 @@ static __global__ void MinimizeKLDivs(const unsigned int* hist, int num_bins,
       end = num_bins;
     }
 
-    float non_zero_len = 0; // Use decimal fraction to precise equipartition
+    float non_zero_len = 0; // Use decimal fraction for precise equipartition
     float sum = 0;
     for (int j = start; j < end; ++j) {
       Dtype fraction = 1;
@@ -119,6 +113,7 @@ static __global__ void MinimizeKLDivs(const unsigned int* hist, int num_bins,
         max_index[threadIdx.x] = index;
       }
     }
+    __syncthreads();
     ReduceMax(max_index);
     if (threadIdx.x == 0) {
       Dtype src_step = *abs_max / num_bins;
@@ -149,7 +144,7 @@ void QuantizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     CUDA_POST_KERNEL_CHECK;
     DLOG(INFO) << "Abs Max value is " << this->blobs_[0]->cpu_data()[0];
    
-    // Gererate histgram from input data
+    // Generate histgram from input data
     GetHist<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
         bottom_data, count, STATS_BINS, step_data, hist_data);
     CUDA_POST_KERNEL_CHECK;

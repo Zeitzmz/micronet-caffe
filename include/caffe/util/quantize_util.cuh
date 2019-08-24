@@ -1,6 +1,8 @@
 #ifndef CAFFE_UTIL_QUANTIZE_UTIL_H_
 #define CAFFE_UTIL_QUANTIZE_UTIL_H_
 
+#include <cfloat>
+
 namespace caffe {
 
 template <typename Dtype>
@@ -40,7 +42,7 @@ template <typename Dtype>
 inline __device__ void ReduceSum(Dtype* data) {
   for (unsigned int i = blockDim.x / 2; i > 0; i >>= 1) {
     if (threadIdx.x < i) {
-      data[threadIdx.x] += data[threadIdx.x] + data[threadIdx.x + i];
+      data[threadIdx.x] += data[threadIdx.x + i];
     }
     __syncthreads();
   }
@@ -48,14 +50,18 @@ inline __device__ void ReduceSum(Dtype* data) {
 
 template <typename Dtype>
 inline __device__ void ThreadMax(const Dtype* in, Dtype* out, 
-    unsigned int count, unsigned int start, unsigned int stride, bool abs) {
-  Dtype tmp = 0;
+    unsigned int count, unsigned int start, unsigned int stride,
+    bool abs) {
+  Dtype tmp = abs? 0 : -FLT_MAX;
   for (unsigned int i = start; i < count / 4; i += stride) {
     tmp = max(tmp, MaxData4(in, i, abs));
   }
   // process remaining elements
   for (unsigned int i = start + count / 4 * 4; i < count; i += 4) {
-    tmp = max(tmp, in[i]);
+    if (abs)
+      tmp = max(tmp, fabs(in[i]));
+    else
+      tmp = max(tmp, in[i]);
   }
   out[threadIdx.x] = tmp; 
   __syncthreads();
