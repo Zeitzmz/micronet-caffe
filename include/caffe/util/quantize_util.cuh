@@ -105,7 +105,7 @@ __global__ void GetAbsMax(const Dtype* data, int count,
 template<typename Dtype>
 inline __device__ Dtype quantize_op(const Dtype* input, Dtype step,
     Dtype min_val, Dtype max_val) {
-  return min(max(round(*input / step) * step, max_val), min_val);
+  return max(min(round(*input / step) * step, max_val), min_val);
 }
 
 template<typename Dtype>
