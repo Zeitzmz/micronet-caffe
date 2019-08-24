@@ -97,7 +97,8 @@ static __global__ void MinimizeKLDivs(const unsigned int* hist, int num_bins,
   
   ReduceSum(kl_buffer);
   if (threadIdx.x == 0 && kl_buffer[0] == Dtype(0)) {
-    printf("ERROR: there is a kl_divergence equal to 0.");
+    printf("ERROR: There is a kl_divergence equal to 0. (%d at %d)\n", 
+        blockIdx.x + num_quant_bins, num_bins);
   }
  
   IncBlock(kl_buffer, kl_divs + blockIdx.x, &is_lastblock_done);
