@@ -179,6 +179,8 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   weight_offset_ = conv_out_channels_ * kernel_dim_ / group_;
   // Propagate gradients to the parameters (as directed by backward pass).
   this->param_propagate_down_.resize(this->blobs_.size(), true);
+
+  fp16_setup_ = false;
 }
 
 template <typename Dtype>
@@ -252,6 +254,39 @@ void BaseConvolutionLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     caffe_set(bias_multiplier_.count(), Dtype(1),
         bias_multiplier_.mutable_cpu_data());
   }
+
+#ifndef CPU_ONLY
+  if (this->layer_param_.convolution_param().fp16_accumulation()) {
+    if (!fp16_setup_) {
+      cudaMalloc((void**)&col_buffer_fp16_, sizeof(__half) * col_buffer_.count());
+      cudaMalloc((void**)&weight_buffer_fp16_, sizeof(__half) * this->blobs_[0]->count());
+      // The fp16 accumulation will only hold one image output at a time to void
+      // overly large memory usage.
+      cudaMalloc((void**)&output_buffer_fp16_, sizeof(__half) * top_dim_);
+      cudaMalloc((void**)&one_fp16_, sizeof(__half));
+      cudaMalloc((void**)&zero_fp16_, sizeof(__half));
+      
+      float one_host[1] = {1.f};
+      float zero_host[1] = {0.f};
+      float *one_dev, *zero_dev;
+      cudaMalloc((void**)&one_dev, sizeof(float));
+      cudaMalloc((void**)&zero_dev, sizeof(float));
+      caffe_copy(1, &one_host[0], one_dev);
+      caffe_copy(1, &zero_host[0], zero_dev);
+      caffe_float2half(1, one_dev, one_fp16_);
+      caffe_float2half(1, zero_dev, zero_fp16_);
+      cudaFree(one_dev);
+      cudaFree(zero_dev);
+
+      if (bias_term_) {
+        cudaMalloc((void**)&bias_buffer_fp16_, sizeof(__half) * this->blobs_[1]->count());
+        cudaMalloc((void**)&bias_multiplier_buffer_fp16_, sizeof(__half) * bias_multiplier_.count());
+        caffe_float2half(bias_multiplier_.count(), bias_multiplier_.gpu_data(), bias_multiplier_buffer_fp16_);
+      }
+    }
+    fp16_setup_ = true;
+  }
+#endif
 }
 
 template <typename Dtype>
@@ -333,20 +368,43 @@ void BaseConvolutionLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
     }
     col_buff = col_buffer_.gpu_data();
   }
+
+  if (fp16_setup_) {
+    caffe_float2half(col_buffer_.count(), col_buffer_.gpu_data(), col_buffer_fp16_);
+  }
+
   for (int g = 0; g < group_; ++g) {
-    caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
-        group_, conv_out_spatial_dim_, kernel_dim_,
-        (Dtype)1., weights + weight_offset_ * g, col_buff + col_offset_ * g,
-        (Dtype)0., output + output_offset_ * g);
+    if (fp16_setup_) {
+      caffe_gpu_gemm_half(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
+          group_, conv_out_spatial_dim_, kernel_dim_,
+          one_fp16_, weight_buffer_fp16_ + weight_offset_ * g, col_buffer_fp16_ + col_offset_ * g,
+          zero_fp16_, output_buffer_fp16_ + output_offset_ * g);
+    } else {
+      caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, conv_out_channels_ /
+          group_, conv_out_spatial_dim_, kernel_dim_,
+          (Dtype)1., weights + weight_offset_ * g, col_buff + col_offset_ * g,
+          (Dtype)0., output + output_offset_ * g);
+    }
+  }
+  
+  if (fp16_setup_ && !this->bias_term_) {
+    caffe_half2float(output_offset_ * group_, output_buffer_fp16_, output);
   }
 }
 
 template <typename Dtype>
 void BaseConvolutionLayer<Dtype>::forward_gpu_bias(Dtype* output,
     const Dtype* bias) {
-  caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num_output_,
-      out_spatial_dim_, 1, (Dtype)1., bias, bias_multiplier_.gpu_data(),
-      (Dtype)1., output);
+  if (fp16_setup_) {
+    caffe_gpu_gemm_half(CblasNoTrans, CblasNoTrans, num_output_,
+        out_spatial_dim_, 1, one_fp16_, bias_buffer_fp16_, bias_multiplier_buffer_fp16_,
+        one_fp16_, output_buffer_fp16_);
+    caffe_half2float(num_output_ * out_spatial_dim_, output_buffer_fp16_, output);
+  } else {
+    caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num_output_,
+        out_spatial_dim_, 1, (Dtype)1., bias, bias_multiplier_.gpu_data(),
+        (Dtype)1., output);
+  }
 }
 
 template <typename Dtype>
@@ -391,6 +449,19 @@ void BaseConvolutionLayer<Dtype>::backward_gpu_bias(Dtype* bias,
 }
 
 #endif  // !CPU_ONLY
+
+template <typename Dtype>
+BaseConvolutionLayer<Dtype>::~BaseConvolutionLayer() {
+#ifndef CPU_ONLY
+  if (fp16_setup_) {
+    cudaFree(col_buffer_fp16_);
+    cudaFree(weight_buffer_fp16_);
+    cudaFree(bias_buffer_fp16_);
+    cudaFree(bias_multiplier_buffer_fp16_);
+    cudaFree(output_buffer_fp16_);
+  }
+#endif
+}
 
 INSTANTIATE_CLASS(BaseConvolutionLayer);
 

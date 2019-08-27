@@ -69,6 +69,13 @@ void ConvolutionLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     QuantizeWeights_gpu(top[0]->mutable_gpu_data());
   }
   const Dtype* weight = this->blobs_[0]->gpu_data();
+  if (this->fp16_setup_) {
+    caffe_float2half(this->blobs_[0]->count(), weight, this->weight_buffer_fp16_);
+    if (this->bias_term_) {
+      const Dtype* bias = this->blobs_[1]->gpu_data();
+      caffe_float2half(this->blobs_[1]->count(), bias, this->bias_buffer_fp16_);
+    }
+  }
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->gpu_data();
     Dtype* top_data = top[i]->mutable_gpu_data();

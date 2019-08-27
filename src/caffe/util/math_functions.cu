@@ -42,6 +42,22 @@ void caffe_gpu_gemm<double>(const CBLAS_TRANSPOSE TransA,
       N, M, K, &alpha, B, ldb, A, lda, &beta, C, N));
 }
 
+void caffe_gpu_gemm_half(const CBLAS_TRANSPOSE TransA,
+    const CBLAS_TRANSPOSE TransB, const int M, const int N, const int K,
+    const __half *alpha, const __half* A, const __half* B, const __half* beta,
+    __half* C) {
+  // Note that cublas follows fortran order.
+  int lda = (TransA == CblasNoTrans) ? K : M;
+  int ldb = (TransB == CblasNoTrans) ? N : K;
+  cublasOperation_t cuTransA =
+      (TransA == CblasNoTrans) ? CUBLAS_OP_N : CUBLAS_OP_T;
+  cublasOperation_t cuTransB =
+      (TransB == CblasNoTrans) ? CUBLAS_OP_N : CUBLAS_OP_T;
+  CUBLAS_CHECK(cublasGemmEx(Caffe::cublas_handle(), cuTransB, cuTransA,
+      N, M, K, alpha, (void*)B, CUDA_R_16F, ldb, (void*)A, CUDA_R_16F,
+      lda, beta, C, CUDA_R_16F, N, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
+}
+
 template <>
 void caffe_gpu_gemv<float>(const CBLAS_TRANSPOSE TransA, const int M,
     const int N, const float alpha, const float* A, const float* x,
@@ -455,5 +471,42 @@ void caffe_gpu_rng_gaussian(const int n, const double mu, const double sigma,
   CURAND_CHECK(
       curandGenerateNormalDouble(Caffe::curand_generator(), r, n, mu, sigma));
 }
+
+__global__ void float2half_kernel(const int n, const float* x, __half* y) {
+#if __CUDA_ARCH__ >= 700
+  CUDA_KERNEL_LOOP(index, n) {
+    y[index] = __float2half_rn(x[index]);
+  }
+#endif
+}
+
+template <>
+void caffe_float2half(const int N, const float* x, __half* y) {
+  float2half_kernel<<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>(N, x, y);
+}
+
+template <>
+void caffe_float2half(const int N, const double* x, __half* y) {
+  LOG(FATAL) << "Input must be float!";
+}
+
+__global__ void half2float_kernel(const int n, const __half* x, float* y) {
+#if __CUDA_ARCH__ >= 700
+  CUDA_KERNEL_LOOP(index, n) {
+    y[index] = __half2float(x[index]);
+  }
+#endif
+}
+
+template <>
+void caffe_half2float(const int N, const __half* x, float* y) {
+  half2float_kernel<<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>(N, x, y);
+}
+
+template <>
+void caffe_half2float(const int N, const __half* x, double* y) {
+  LOG(FATAL) << "Input must be float!";
+}
+
 
 }  // namespace caffe

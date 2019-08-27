@@ -7,6 +7,7 @@
 #include "caffe/layer.hpp"
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/im2col.hpp"
+#include "caffe/util/device_alternate.hpp"
 
 namespace caffe {
 
@@ -23,6 +24,7 @@ class BaseConvolutionLayer : public Layer<Dtype> {
       const vector<Blob<Dtype>*>& top);
   virtual void Reshape(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
+  virtual ~BaseConvolutionLayer();
 
   virtual inline int MinBottomBlobs() const { return 1; }
   virtual inline int MinTopBlobs() const { return 1; }
@@ -92,6 +94,17 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   bool bias_term_;
   bool is_1x1_;
   bool force_nd_im2col_;
+
+#ifndef CPU_ONLY
+  __half* col_buffer_fp16_;
+  __half* weight_buffer_fp16_;
+  __half* bias_buffer_fp16_;
+  __half* bias_multiplier_buffer_fp16_;
+  __half* output_buffer_fp16_;
+  __half* one_fp16_;
+  __half* zero_fp16_;
+#endif
+  bool fp16_setup_;
 
  private:
   // wrap im2col/col2im so we don't have to remember the (long) argument lists
