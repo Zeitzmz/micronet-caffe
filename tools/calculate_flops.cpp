@@ -16,6 +16,9 @@ using std::vector;
 using std::string;
 using boost::shared_ptr;
 #define BIAS_BITS 32
+#define ADD_BITS 32
+#define BASELINE_FLOPS 1170
+#define BASELINE_PARAM 6.9
 
 DEFINE_string(model, "",
     "The model definition protocol buffer text file.");
@@ -43,15 +46,15 @@ int main(int argc, char** argv) {
 #ifndef CPU_ONLY
     Caffe::SetDevice(1);
     Caffe::set_mode(Caffe::GPU);
-    std::cout<<"set GPU 1"<<std::endl;  
+    //std::cout<<"set GPU 1"<<std::endl;  
 #else
     Caffe::set_mode(Caffe::CPU);
 #endif 
 
   // Instantiate the caffe net.
-  std::cout<<"Before Build Net"<<std::endl;
+  //std::cout<<"Before Build Net"<<std::endl;
   Net<float> net(FLAGS_model, caffe::TEST);
-  std::cout<<"End    Build Net"<<std::endl;
+  //std::cout<<"End    Build Net"<<std::endl;
   unsigned long total_model_size = 0;
   unsigned long total_mul_flops = 0;
   unsigned long total_add_flops = 0;
@@ -80,7 +83,7 @@ int main(int argc, char** argv) {
           layer_name = line_string.substr(start, length);
         }
         else{
-          std::cout<<atof(line_string.substr(start,length).c_str())<<std::endl;
+          //std::cout<<atof(line_string.substr(start,length).c_str())<<std::endl;
           layer_config.push_back(float(atof(line_string.substr(start,length).c_str())));
         }
         start+=length;
@@ -89,6 +92,7 @@ int main(int argc, char** argv) {
       config_info.insert({layer_name, layer_config});    
     }
   }
+  /*
   for(auto i : config_info){
     std::cout<<"layer_name:"<<i.first<<" ";
     for(auto j : i.second){
@@ -96,7 +100,7 @@ int main(int argc, char** argv) {
     }
     std::cout<<std::endl;
   }
-  
+  */
 
   std::map<int,int> bottom_quantize_info;
   for (int i=0; i < layers.size(); ++i){
@@ -116,7 +120,8 @@ int main(int argc, char** argv) {
 
     float layer_sparsity = 0.0;
     int param_bits = 32;
-    int add_bits = 32;
+    //int add_bits = 32;
+    int add_bits = ADD_BITS;
     int mul_bits = 32;
 
     std::string layer_name = layer_names[i];
@@ -183,24 +188,38 @@ int main(int argc, char** argv) {
         add_bit_flops += ( ksize * ksize - 1 ) * top_vecs[i][0]->shape()[1] * std::max(add_bits, param_bits);
       }
     } else if (strcmp(layers[i]->type(), "ReLU") == 0) {
-      mul_bit_flops += (top_vecs[i][0]->count(index)) * mul_bits;
+        mul_bit_flops += (top_vecs[i][0]->count(index)) * mul_bits;
+        //mul_bit_flops += (top_vecs[i][0]->count(index)) * 8;
     } 
     else if (strcmp(layers[i]->type(), "Eltwise") == 0) {
-      if (layers[i]->layer_param().eltwise_param().operation()
-          == caffe::EltwiseParameter_EltwiseOp_PROD || 
-         (layers[i]->layer_param().eltwise_param().operation() 
+      if ((layers[i]->layer_param().eltwise_param().operation() 
           == caffe::EltwiseParameter_EltwiseOp_SUM)) {
         add_bit_flops += (top_vecs[i][0]->count(index)) * std::max(add_bits, param_bits);
       }
     }
 
-    if (add_bit_flops || mul_bit_flops) {
+    //std::cout<<"Layer: "<<layer_names[i]<<" : param_bits: "<< param_bits<<", layer size: "<< layer_size/32<<std::endl;
+    /*if (add_bit_flops || mul_bit_flops) {
       std::cout << "Layer: " << layer_names[i] << ", type: " << layers[i]->type() 
           << ", operations add: "<< add_bit_flops / float(1e6) / 32 << " M "
           << ", operations mul: "<< mul_bit_flops / float(1e6) / 32 << " M "
           << ", layer param : "<< layer_size/32 <<"   "<<total_mul_flops/float(1e6)/32<<std::endl;
+    }*/
+    int bottom0_bits=32;
+    int bottom1_bits=32;
+     
+    for(int i=0; i<layer_bottom_ids.size(); ++i){
+      if(bottom_quantize_info.find(layer_bottom_ids[i])!=bottom_quantize_info.end()){
+        if(i==0)
+          bottom0_bits = bottom_quantize_info.find(layer_bottom_ids[i])->second;
+        if(i==1)
+          bottom1_bits = bottom_quantize_info.find(layer_bottom_ids[i])->second;
+      }
     }
+ 
     
+    std::cout<<layer_names[i]<<", "<<layers[i]->type()<<", "<<bottom0_bits<<", "<<(layer_bottom_ids.size()>1 ? std::to_string(bottom1_bits) : "_")<<", "<<layer_sparsity<<", "<<add_bits<<", "<<std::max(param_bits,mul_bits)<<", "<<param_bits<<", "<<BIAS_BITS<<std::endl;    
+
     total_mul_flops += mul_bit_flops;
     total_add_flops += add_bit_flops;
     total_model_size += layer_size;
@@ -212,6 +231,7 @@ int main(int argc, char** argv) {
   std::cout << "Total mul operations: " << total_mul_flops / float(1e6) / 32 << " M"<< std::endl;
   std::cout << "Total add operations: " << total_add_flops / float(1e6) / 32 << " M"<< std::endl;
   std::cout << "Total model size    : " << total_model_size / float(1e6) / 32 << " M"<< std::endl;
+  std::cout << "Total score         : " << total_model_size / float(1e6) / 32 / float(BASELINE_PARAM) + (total_add_flops + total_model_size) / float(1e6) / 32 / float(BASELINE_FLOPS) << std::endl;
   std::cout << "***********************************\n" << std::endl;
   return 0;
 }
