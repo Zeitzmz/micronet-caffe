@@ -49,7 +49,9 @@ int main(int argc, char** argv) {
 #endif 
 
   // Instantiate the caffe net.
+  std::cout<<"Before Build Net"<<std::endl;
   Net<float> net(FLAGS_model, caffe::TEST);
+  std::cout<<"End    Build Net"<<std::endl;
   unsigned long total_model_size = 0;
   unsigned long total_mul_flops = 0;
   unsigned long total_add_flops = 0;
