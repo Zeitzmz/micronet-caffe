@@ -255,6 +255,16 @@ message SolverParameter {
   // weights parameter separated by ',' (like in a command string) or
   // in repeated weights parameters separately.
   repeated string weights = 42;
+
+  // For DSD,dsd training
+  // ratio of fixed parameters in sencond dense from DSD training
+  optional float fixed_param_ratio = 74;
+  enum DSDPhase {
+    SPARSE = 0;
+    DENSE = 1;
+  }
+  optional DSDPhase dsd_phase = 75;
+  optional string dsd_mask_file = 76;
 }
 
 // A message that stores the solver snapshots

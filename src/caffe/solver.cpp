@@ -297,6 +297,22 @@ void Solver<Dtype>::Solve(const char* resume_file) {
     Restore(resume_file);
   }
 
+  // for DSD dsd training
+  if (param_.has_dsd_mask_file())
+    mask_file_ = param_.dsd_mask_file();
+    if (!mask_file_.empty()) {
+      CHECK(param_.has_dsd_phase())
+          << "The parameter dsd_phase must be given in solver, either SPARSE or DENSE.";
+      if (param_.dsd_phase() == SolverParameter_DSDPhase_SPARSE) {
+        GetMask(true);
+    } else if (param_.dsd_phase() == SolverParameter_DSDPhase_DENSE) {
+      GetMask(false);
+      CHECK(param_.has_fixed_param_ratio());
+      TransToDenseMask(param_.fixed_param_ratio());
+    } else
+      LOG(ERROR) << "Unhnown phase in dsd_phase.";
+  }
+
   // For a network that is trained by the solver, no bottom or top vecs
   // should be given, and we will just provide dummy vecs.
   int start_iter = iter_;
@@ -498,6 +514,106 @@ void Solver<Dtype>::UpdateSmoothedLoss(Dtype loss, int start_iter,
     int idx = (iter_ - start_iter) % average_loss;
     smoothed_loss_ += (loss - losses_[idx]) / average_loss;
     losses_[idx] = loss;
+  }
+}
+
+//for DSD dsd training
+template <typename Dtype>
+void Solver<Dtype>::GetMask(bool clip_model) {
+  LOG(INFO) << "Get mask from " << mask_file_;
+  std::ifstream fin(mask_file_);
+  CHECK(fin.good()) << "Can't open file " << mask_file_;
+  string strline, name;
+  Dtype val;
+  int len;
+  while (getline(fin, strline)) {
+    std::istringstream iss(strline);
+    iss >> name >> len;
+    CHECK(net_->has_layer(name));
+    const shared_ptr<Layer<Dtype> > layer = net_->layer_by_name(name);
+    CHECK(string(layer->type()).find("BatchNorm") == string::npos);
+    CHECK_GT(layer->blobs().size(), 0);
+    shared_ptr<Blob<Dtype> > blob = layer->blobs()[0];
+    CHECK_EQ(blob->count(), len);
+    Dtype* data = blob->mutable_cpu_data();
+
+    shared_ptr<Blob<Dtype> > val_b(new Blob<Dtype>(vector<int>(1, len)));
+    Dtype* val_data = val_b->mutable_cpu_data();
+    int id = 0;
+    while (iss >> val) {
+      val_data[id++] = val;
+    }
+    CHECK_EQ(id, len);
+    if (clip_model)
+      caffe_mul(len, data, val_data, data);
+    mask_.push_back(std::make_pair(name, val_b));
+  }
+  fin.close();
+}
+
+//for DSD dsd training
+template <typename Dtype>
+void Solver<Dtype>::TransToDenseMask(Dtype ratio) {
+  LOG(INFO) << "Transform mask for dense phase.";
+  for (int i = 0; i < mask_.size(); ++i) {
+    shared_ptr<Blob<Dtype> > &blob = mask_[i].second;
+    caffe_set(blob->count(), Dtype(1), blob->mutable_cpu_diff());
+    caffe_axpy(blob->count(), Dtype(-1), blob->cpu_data(), blob->mutable_cpu_diff());
+    caffe_cpu_axpby(blob->count(), Dtype(1), blob->cpu_diff(), ratio, blob->mutable_cpu_data());
+  }
+}
+
+//for DSD dsd training
+template <typename Dtype>
+void Solver<Dtype>::DenseDiff() {
+  for (int i = 0; i < this->mask_.size(); ++i) {
+    Layer<Dtype> *layer = this->net_->layer_by_name(this->mask_[i].first).get();
+    Blob<Dtype> *blob = layer->blobs()[0].get();
+    switch (Caffe::mode()) {
+    case Caffe::CPU: {
+      caffe_mul(blob->count(), blob->cpu_diff(), this->mask_[i].second->cpu_data(),
+                blob->mutable_cpu_diff());
+      break;
+    }
+    case Caffe::GPU: {
+  #ifndef CPU_ONLY
+      caffe_gpu_mul(blob->count(), blob->gpu_diff(), this->mask_[i].second->gpu_data(),
+                    blob->mutable_gpu_diff());
+  #else
+      NO_GPU;
+  #endif
+      break;
+    }
+    default:
+      LOG(FATAL) << "Unknown caffe mode: " << Caffe::mode();
+    }
+  }
+}
+
+//for DSD dsd training
+template <typename Dtype>
+void Solver<Dtype>::PruneWeights() {
+  for (int i = 0; i < this->mask_.size(); ++i) {
+    Layer<Dtype> *layer = this->net_->layer_by_name(this->mask_[i].first).get();
+    Blob<Dtype> *blob = layer->blobs()[0].get();
+    switch (Caffe::mode()) {
+    case Caffe::CPU: {
+      caffe_mul(blob->count(), blob->cpu_data(), this->mask_[i].second->cpu_data(),
+                blob->mutable_cpu_data());
+      break;
+    }
+    case Caffe::GPU: {
+  #ifndef CPU_ONLY
+      caffe_gpu_mul(blob->count(), blob->gpu_data(), this->mask_[i].second->gpu_data(),
+                    blob->mutable_gpu_data());
+  #else
+      NO_GPU;
+  #endif
+      break;
+    }
+    default:
+      LOG(FATAL) << "Unknown caffe mode: " << Caffe::mode();
+    }
   }
 }
 
