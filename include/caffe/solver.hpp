@@ -110,6 +110,12 @@ class Solver {
   void DisplayOutputBlobs(const int net_id);
   void UpdateSmoothedLoss(Dtype loss, int start_iter, int average_loss);
 
+  // Use for DSD training
+  virtual void GetMask(bool clip_model);
+  virtual void TransToDenseMask(Dtype fixed_param_ratio);
+  virtual void PruneWeights();
+  virtual void DenseDiff();
+
   SolverParameter param_;
   int iter_;
   int current_step_;
@@ -129,6 +135,10 @@ class Solver {
   // Timing information, handy to tune e.g. nbr of GPUs
   Timer iteration_timer_;
   float iterations_last_;
+
+  // use for DSD dsd training
+  vector<std::pair<string, shared_ptr<Blob<Dtype> > > > mask_;
+  string mask_file_;
 
   DISABLE_COPY_AND_ASSIGN(Solver);
 };

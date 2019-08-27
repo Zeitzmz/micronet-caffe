@@ -117,9 +117,24 @@ void SGDSolver<Dtype>::ApplyUpdate() {
        ++param_id) {
     Normalize(param_id);
     Regularize(param_id);
+    //ComputeUpdateValue(param_id, rate);
+  }
+
+  // DSD: only update non-masked weights in dense phase
+  if (this->mask_.size() && this->param_.dsd_phase() == SolverParameter_DSDPhase_DENSE) {
+    this->DenseDiff();
+  }
+
+  for (int param_id = 0; param_id < this->net_->learnable_params().size();
+       ++param_id) {
     ComputeUpdateValue(param_id, rate);
   }
   this->net_->Update();
+
+  // DSD : prune weights according generated mask in sparse phase
+  if (this->mask_.size() && this->param_.dsd_phase() == SolverParameter_DSDPhase_SPARSE) {
+    this->PruneWeights();
+  }
 
   // Increment the internal iter_ counter -- its value should always indicate
   // the number of times the weights have been updated.
