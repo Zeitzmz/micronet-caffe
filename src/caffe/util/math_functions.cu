@@ -491,10 +491,12 @@ void caffe_float2half(const int N, const double* x, __half* y) {
 }
 
 __global__ void half2float_kernel(const int n, const __half* x, float* y) {
-#if __CUDA_ARCH__ >= 700
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 300
   CUDA_KERNEL_LOOP(index, n) {
     y[index] = __half2float(x[index]);
   }
+#else
+  printf("ERROR: __half2float() requires __CUDA_ARCH__ greater than or equal to 300.");
 #endif
 }
 

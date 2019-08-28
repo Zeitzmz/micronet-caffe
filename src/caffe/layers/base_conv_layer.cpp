@@ -370,7 +370,7 @@ void BaseConvolutionLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
   }
 
   if (fp16_setup_) {
-    caffe_float2half(col_buffer_.count(), col_buffer_.gpu_data(), col_buffer_fp16_);
+    caffe_float2half(col_buffer_.count(), col_buff, col_buffer_fp16_);
   }
 
   for (int g = 0; g < group_; ++g) {
