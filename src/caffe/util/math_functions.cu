@@ -473,10 +473,12 @@ void caffe_gpu_rng_gaussian(const int n, const double mu, const double sigma,
 }
 
 __global__ void float2half_kernel(const int n, const float* x, __half* y) {
-#if __CUDA_ARCH__ >= 700
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 300
   CUDA_KERNEL_LOOP(index, n) {
     y[index] = __float2half_rn(x[index]);
   }
+#else
+  printf("ERROR: __float2half() requires __CUDA_ARCH__ greater than or equal to 300.");
 #endif
 }
 
