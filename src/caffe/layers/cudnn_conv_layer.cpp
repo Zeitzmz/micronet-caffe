@@ -85,6 +85,10 @@ void CuDNNConvolutionLayer<Dtype>::LayerSetUp(
   }
 
   handles_setup_ = true;
+
+  CHECK_EQ(this->layer_param_.convolution_param().fp16_accumulation(), false) 
+      << "CuDNNConvolution can not perform accumulation in fp16 type. "
+      << "Use 'engine: CAFFE' for fp16 accumulation.";
 }
 
 template <typename Dtype>
