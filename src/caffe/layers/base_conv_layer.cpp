@@ -263,8 +263,8 @@ void BaseConvolutionLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       // The fp16 accumulation will only hold one image output at a time to void
       // overly large memory usage.
       cudaMalloc((void**)&output_buffer_fp16_, sizeof(__half) * top_dim_);
-      cudaMalloc((void**)&one_fp16_, sizeof(__half));
-      cudaMalloc((void**)&zero_fp16_, sizeof(__half));
+      cudaMallocManaged((void**)&one_fp16_, sizeof(__half));
+      cudaMallocManaged((void**)&zero_fp16_, sizeof(__half));
       
       float one_host[1] = {1.f};
       float zero_host[1] = {0.f};
