@@ -15,8 +15,8 @@ using caffe::Blob;
 using std::vector;
 using std::string;
 using boost::shared_ptr;
-#define BIAS_BITS 32
-#define ADD_BITS 32
+#define BIAS_BITS 16
+#define ADD_BITS 16
 #define BASELINE_FLOPS 1170
 #define BASELINE_PARAM 6.9
 
@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
   std::cout << "Total mul operations: " << total_mul_flops / float(1e6) / 32 << " M"<< std::endl;
   std::cout << "Total add operations: " << total_add_flops / float(1e6) / 32 << " M"<< std::endl;
   std::cout << "Total model size    : " << total_model_size / float(1e6) / 32 << " M"<< std::endl;
-  std::cout << "Total score         : " << total_model_size / float(1e6) / 32 / float(BASELINE_PARAM) + (total_add_flops + total_model_size) / float(1e6) / 32 / float(BASELINE_FLOPS) << std::endl;
+  std::cout << "Total score         : " << total_model_size / float(1e6) / 32 / float(BASELINE_PARAM) + (total_add_flops + total_mul_flops) / float(1e6) / 32 / float(BASELINE_FLOPS) << std::endl;
   std::cout << "***********************************\n" << std::endl;
   return 0;
 }
