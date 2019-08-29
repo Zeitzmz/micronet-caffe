@@ -9,7 +9,7 @@ template <typename Dtype>
 static __global__ void QuantizeChannel(const Dtype* in, Dtype* out, 
     int dim, int precision) {
   __shared__ Dtype buffer[CAFFE_CUDA_NUM_THREADS];
-  Dtype tmp = 0;
+  Dtype tmp = FLT_MIN;
   for (int i = threadIdx.x; i < dim; i += blockDim.x) {
     int gid = blockIdx.x * dim + i;
     tmp = max(tmp, fabs(in[gid]));

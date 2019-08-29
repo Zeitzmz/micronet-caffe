@@ -52,7 +52,7 @@ template <typename Dtype>
 inline __device__ void ThreadMax(const Dtype* in, Dtype* out, 
     unsigned int count, unsigned int start, unsigned int stride,
     bool abs) {
-  Dtype tmp = abs? 0 : -FLT_MAX;
+  Dtype tmp = abs? FLT_MIN : -FLT_MAX;
   for (unsigned int i = start; i < count / 4; i += stride) {
     tmp = max(tmp, MaxData4(in, i, abs));
   }

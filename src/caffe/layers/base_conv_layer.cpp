@@ -181,6 +181,9 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   this->param_propagate_down_.resize(this->blobs_.size(), true);
 
   fp16_setup_ = false;
+  if (this->layer_param_.convolution_param().fp16_accumulation()) {
+    CHECK_EQ(Caffe::mode(), Caffe::GPU) << "fp16_accumulation only ";
+  }
 }
 
 template <typename Dtype>
