@@ -112,13 +112,15 @@ cv::Mat ReadImageToCVMat(const string& filename, const int short_edge,
     int new_width = 0;
     if (cv_img_origin.rows < cv_img_origin.cols) { // height < width
       float scale = float(short_edge) / cv_img_origin.rows;
-      new_width = round(scale * cv_img_origin.cols);
+      //new_width = round(scale * cv_img_origin.cols);
+      new_width = int(scale * cv_img_origin.cols);
       new_height = short_edge;
     }
     else { // width <= height
       float scale = float(short_edge) / cv_img_origin.cols;
       new_width = short_edge;
-      new_height = round(scale * cv_img_origin.rows);
+      //new_height = round(scale * cv_img_origin.rows);
+      new_height = int(scale * cv_img_origin.rows);
     }
     cv::resize(cv_img_origin, cv_img, cv::Size(new_width, new_height));
   } else {

@@ -191,7 +191,11 @@ int main(int argc, char** argv) {
         mul_bit_flops += (top_vecs[i][0]->count(index)) * mul_bits;
         //mul_bit_flops += (top_vecs[i][0]->count(index)) * 8;
     } 
-    else if (strcmp(layers[i]->type(), "Eltwise") == 0) {
+    else if (strcmp(layers[i]->type(), "Swish") == 0) {
+        mul_bit_flops += 3 * (top_vecs[i][0]->count(index)) * mul_bits;
+        //mul_bit_flops += (top_vecs[i][0]->count(index)) * 8;
+    } 
+   else if (strcmp(layers[i]->type(), "Eltwise") == 0) {
       if ((layers[i]->layer_param().eltwise_param().operation() 
           == caffe::EltwiseParameter_EltwiseOp_SUM)) {
         add_bit_flops += (top_vecs[i][0]->count(index)) * std::max(add_bits, param_bits);
