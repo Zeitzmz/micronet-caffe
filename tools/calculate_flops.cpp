@@ -109,6 +109,13 @@ int main(int argc, char** argv) {
       int top_precision = layers[i]->layer_param().quantize_param().precision();
       bottom_quantize_info.insert({top_id, top_precision});
     }
+    if(strcmp(layers[i]->type(), "Slice") == 0){
+      for(int j=0 ;j<net.top_ids(i).size(); ++j){
+        int top_id = net.top_ids(i)[j];
+        int top_precision = layers[i-1]->layer_param().quantize_param().precision(); // slice doesn't change precision of feature map
+        bottom_quantize_info.insert({top_id, top_precision});
+      }
+    }
   }
 
 
@@ -125,15 +132,12 @@ int main(int argc, char** argv) {
     int mul_bits = 32;
 
     std::string layer_name = layer_names[i];
-   
+    
     //set sparsity
     auto config_iter = config_info.find(layer_name);
     if(config_iter!=config_info.end()){
       layer_sparsity = config_iter->second[0];
-      //param_bits = config_iter->second[1];
-      //add_bits = config_iter->second[2];
-      //mul_bits = config_iter->second[3];
-    }
+   }
 
     // set mul_bits (input_bits)
     vector<int> layer_bottom_ids = net.bottom_ids(i);
@@ -144,6 +148,18 @@ int main(int argc, char** argv) {
       }
     } 
     mul_bits = tmp_mul_bits > 0 ? std::min(tmp_mul_bits, mul_bits) : mul_bits; 
+    
+    int bottom0_bits=32;
+    int bottom1_bits=32;
+     
+    for(int i=0; i<layer_bottom_ids.size(); ++i){
+      if(bottom_quantize_info.find(layer_bottom_ids[i])!=bottom_quantize_info.end()){
+        if(i==0)
+          bottom0_bits = bottom_quantize_info.find(layer_bottom_ids[i])->second;
+        if(i==1)
+          bottom1_bits = bottom_quantize_info.find(layer_bottom_ids[i])->second;
+      }
+    }
 
     // set_param_bits
     if(layers[i]->layer_param().has_quantize_param()){
@@ -188,10 +204,12 @@ int main(int argc, char** argv) {
         add_bit_flops += ( ksize * ksize - 1 ) * top_vecs[i][0]->shape()[1] * std::max(add_bits, param_bits);
       }
     } else if (strcmp(layers[i]->type(), "ReLU") == 0) {
+        mul_bits = bottom0_bits;
         mul_bit_flops += (top_vecs[i][0]->count(index)) * mul_bits;
         //mul_bit_flops += (top_vecs[i][0]->count(index)) * 8;
     } 
     else if (strcmp(layers[i]->type(), "Swish") == 0) {
+        mul_bits = bottom0_bits;
         mul_bit_flops += 3 * (top_vecs[i][0]->count(index)) * mul_bits;
         //mul_bit_flops += (top_vecs[i][0]->count(index)) * 8;
     } 
@@ -209,19 +227,7 @@ int main(int argc, char** argv) {
           << ", operations mul: "<< mul_bit_flops / float(1e6) / 32 << " M "
           << ", layer param : "<< layer_size/32 <<"   "<<total_mul_flops/float(1e6)/32<<std::endl;
     }*/
-    int bottom0_bits=32;
-    int bottom1_bits=32;
-     
-    for(int i=0; i<layer_bottom_ids.size(); ++i){
-      if(bottom_quantize_info.find(layer_bottom_ids[i])!=bottom_quantize_info.end()){
-        if(i==0)
-          bottom0_bits = bottom_quantize_info.find(layer_bottom_ids[i])->second;
-        if(i==1)
-          bottom1_bits = bottom_quantize_info.find(layer_bottom_ids[i])->second;
-      }
-    }
- 
-    
+       
     std::cout<<layer_names[i]<<", "<<layers[i]->type()<<", "<<bottom0_bits<<", "<<(layer_bottom_ids.size()>1 ? std::to_string(bottom1_bits) : "_")<<", "<<layer_sparsity<<", "<<add_bits<<", "<<std::max(param_bits,mul_bits)<<", "<<param_bits<<", "<<BIAS_BITS<<std::endl;    
 
     total_mul_flops += mul_bit_flops;
