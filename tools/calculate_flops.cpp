@@ -103,22 +103,48 @@ int main(int argc, char** argv) {
   */
 
   std::map<int,int> bottom_quantize_info;
+  std::map<int,int> top_layer_id;
   for (int i=0; i < layers.size(); ++i){
+    for(int j=0; j<net.top_ids(i).size(); ++j){
+      top_layer_id[net.top_ids(i)[j]] = i;
+    }
+    /* 
+    if(strcmp(layers[i]->type(), "Convolution") == 0){
+      if(layers[i]->layer_param().has_quantize_param()){
+        for(int j=0 ;j<net.top_ids(i).size(); ++j){
+          int top_id = net.top_ids(i)[j];
+          int top_precision = ADD_BITS;
+          bottom_quantize_info.insert({top_id, top_precision});
+        }  
+      }
+    }
+    */
     if(strcmp(layers[i]->type(), "Quantize") == 0){
-      int top_id = net.top_ids(i)[0];
-      int top_precision = layers[i]->layer_param().quantize_param().precision();
-      bottom_quantize_info.insert({top_id, top_precision});
+        for(int j=0 ;j<net.top_ids(i).size(); ++j){
+        int top_id = net.top_ids(i)[j];
+        int top_precision = layers[i]->layer_param().quantize_param().precision();
+        bottom_quantize_info.insert({top_id, top_precision});
+        //std::cout<<net.layer_names()[i]<<" : "<<top_precision<<std::endl;
+      }
     }
     if(strcmp(layers[i]->type(), "Slice") == 0){
       for(int j=0 ;j<net.top_ids(i).size(); ++j){
         int top_id = net.top_ids(i)[j];
-        int top_precision = layers[i-1]->layer_param().quantize_param().precision(); // slice doesn't change precision of feature map
+        int slice_bottom_layer = top_layer_id[net.bottom_ids(i)[0]];
+        int top_precision = layers[slice_bottom_layer]->layer_param().quantize_param().precision(); // slice doesn't change precision of feature map
         bottom_quantize_info.insert({top_id, top_precision});
       }
     }
+    if(strcmp(layers[i]->type(), "Split") == 0){
+      for(int j=0 ;j<net.top_ids(i).size(); ++j){
+        int top_id = net.top_ids(i)[j];
+        if(bottom_quantize_info.find(net.bottom_ids(i)[0])!=bottom_quantize_info.end()){        
+          int top_precision = bottom_quantize_info[net.bottom_ids(i)[0]];
+          bottom_quantize_info.insert({top_id, top_precision});
+        }
+      }
+    }
   }
-
-
   for (int i = 0; i < layers.size(); ++i) {
     const vector<caffe::shared_ptr<Blob<float> > >& params=net.layers()[i]->blobs();
     float add_bit_flops = 0;
@@ -193,25 +219,22 @@ int main(int argc, char** argv) {
       mul_bit_flops += top_vecs[i][0]->count(index) * mul_bits;
     } else if (strcmp(layers[i]->type(), "Pooling") == 0){
       int ksize = layers[i]->layer_param().pooling_param().kernel_size();
-      //int stride = layers[i]->layer_param().pooling_param().stride();
       int pool_method = layers[i]->layer_param().pooling_param().pool();
+      if(ksize == 0){
+        ksize = net.bottom_vecs()[i][0]->shape(2);
+      }
       if(pool_method==0){
         std::cout<<"Not Implemented for MAX Pooling"<<std::endl;
-        //exit();
       }
       else if(pool_method==1){
         mul_bit_flops += top_vecs[i][0]->shape()[1] * mul_bits;
-        add_bit_flops += ( ksize * ksize - 1 ) * top_vecs[i][0]->shape()[1] * std::max(add_bits, param_bits);
+        add_bit_flops += ( ksize * ksize - 1 ) * top_vecs[i][0]->shape()[1] * ADD_BITS;//std::max(add_bits, param_bits);
       }
     } else if (strcmp(layers[i]->type(), "ReLU") == 0) {
-        mul_bits = bottom0_bits;
-        mul_bit_flops += (top_vecs[i][0]->count(index)) * mul_bits;
-        //mul_bit_flops += (top_vecs[i][0]->count(index)) * 8;
+        mul_bit_flops += (top_vecs[i][0]->count(index)) * ADD_BITS;
     } 
     else if (strcmp(layers[i]->type(), "Swish") == 0) {
-        mul_bits = bottom0_bits;
-        mul_bit_flops += 3 * (top_vecs[i][0]->count(index)) * mul_bits;
-        //mul_bit_flops += (top_vecs[i][0]->count(index)) * 8;
+        mul_bit_flops += 3 * (top_vecs[i][0]->count(index)) * ADD_BITS;
     } 
    else if (strcmp(layers[i]->type(), "Eltwise") == 0) {
       if ((layers[i]->layer_param().eltwise_param().operation() 
@@ -227,8 +250,9 @@ int main(int argc, char** argv) {
           << ", operations mul: "<< mul_bit_flops / float(1e6) / 32 << " M "
           << ", layer param : "<< layer_size/32 <<"   "<<total_mul_flops/float(1e6)/32<<std::endl;
     }*/
-       
-    std::cout<<layer_names[i]<<", "<<layers[i]->type()<<", "<<bottom0_bits<<", "<<(layer_bottom_ids.size()>1 ? std::to_string(bottom1_bits) : "_")<<", "<<layer_sparsity<<", "<<add_bits<<", "<<std::max(param_bits,mul_bits)<<", "<<param_bits<<", "<<BIAS_BITS<<std::endl;    
+    
+    if(strcmp(layers[i]->type(), "Quantize") != 0 && strcmp(layers[i]->type(), "Split") != 0) 
+      std::cout<<layer_names[i]<<", "<<layers[i]->type()<<", "<<bottom0_bits<<", "<<(layer_bottom_ids.size()>1 ? std::to_string(bottom1_bits) : "_")<<", "<<layer_sparsity<<", "<<add_bits<<", "<<std::max(param_bits,mul_bits)<<", "<<(layers[i]->blobs().size()==0 ? "_" : std::to_string(param_bits))<<", "<<add_bit_flops<<", "<<mul_bit_flops<<", "<<layer_size<<std::endl;    
 
     total_mul_flops += mul_bit_flops;
     total_add_flops += add_bit_flops;
