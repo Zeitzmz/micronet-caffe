@@ -72,13 +72,16 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Parse fake quantization blob
-  std::map<int,int> quantized_blobs;
   std::map<int,int> top_layer_id;
   for (int i=0; i < layers.size(); ++i) {
     for (int j=0; j < net.top_ids(i).size(); ++j) {
       top_layer_id[net.top_ids(i)[j]] = i;
     }
+  }
+
+  // Parse fake quantization blob
+  std::map<int,int> quantized_blobs;
+  for (int i=0; i < layers.size(); ++i) {
     if (!strcmp(layers[i]->type(), "Quantize")) {
       for (int j=0 ;j<net.top_ids(i).size(); ++j) {
         int top_id = net.top_ids(i)[j];
@@ -86,20 +89,25 @@ int main(int argc, char** argv) {
         quantized_blobs.insert({top_id, top_precision});
       }
     }
-    if (!strcmp(layers[i]->type(), "Slice")) {
-      for (int j=0 ;j<net.top_ids(i).size(); ++j) {
-        int top_id = net.top_ids(i)[j];
-        int slice_bottom_layer = top_layer_id[net.bottom_ids(i)[0]];
-        int top_precision = layers[slice_bottom_layer]->layer_param().quantize_param().precision(); // slice doesn't change precision of feature map
-        quantized_blobs.insert({top_id, top_precision});
-      }
-    }
-    if (strcmp(layers[i]->type(), "Split") == 0) {
+  }
+
+  for (int i=0; i < layers.size(); ++i) {
+    if (!strcmp(layers[i]->type(), "Split") || !strcmp(layers[i]->type(), "Slice") 
+        || !strcmp(layers[i]->type(), "Reshape")) {
       for (int j=0 ;j<net.top_ids(i).size(); ++j) {
         int top_id = net.top_ids(i)[j];
         if (quantized_blobs.find(net.bottom_ids(i)[0])!=quantized_blobs.end()) {
-          int top_precision = quantized_blobs[net.bottom_ids(i)[0]];
-          quantized_blobs.insert({top_id, top_precision});
+          int precision = quantized_blobs[net.bottom_ids(i)[0]];
+          quantized_blobs.insert({top_id, precision});
+        }
+      }
+    } else if (!strcmp(layers[i]->type(), "Concat")) {
+      int top_id = net.top_ids(i)[0];
+      if (quantized_blobs.find(top_id) != quantized_blobs.end()) {
+        int precision = quantized_blobs[top_id];
+        for (int j=0; j < net.bottom_ids(i).size(); ++j) {
+          int bottom_id = net.bottom_ids(i)[j];
+          quantized_blobs.insert({bottom_id, precision});
         }
       }
     }
@@ -137,14 +145,15 @@ int main(int argc, char** argv) {
     vector<int> bottoms_bits(layer_bottom_ids.size(), BASE_BITS); 
     for (int j=0; j<layer_bottom_ids.size(); ++j) {
       if (quantized_blobs.find(layer_bottom_ids[j]) != quantized_blobs.end()) {
-        bottoms_bits[j] = quantized_blobs.find(layer_bottom_ids[j])->second;
+        bottoms_bits[j] = quantized_blobs[layer_bottom_ids[j]];
       }
     }
-    if (layer_bottom_ids.size())
+    if (layer_bottom_ids.size()) {
       mul_bits = bottoms_bits[0];
+    }
 
     // set_param_bits
-    if (layers[i]->layer_param().has_quantize_param()){
+    if (layers[i]->layer_param().has_quantize_param()) {
       param_bits = layers[i]->layer_param().quantize_param().precision();
     }
 
@@ -189,12 +198,12 @@ int main(int argc, char** argv) {
         add_bitops += (ksize * ksize - 1) * tops[0]->count(1) * add_bits;
       }
     } else if (!strcmp(layers[i]->type(), "ReLU")) {
-      mul_bitops += (tops[0]->count(1)) * add_bits;
+      mul_bitops += (tops[0]->count(1)) * mul_bits;
     } else if (!strcmp(layers[i]->type(), "Sigmoid")) {
-      mul_bitops += 2 * (tops[0]->count(1)) * add_bits;
-      add_bitops += (tops[0]->count(1)) * add_bits;
+      mul_bitops += 2 * (tops[0]->count(1)) * mul_bits;
+      add_bitops += (tops[0]->count(1)) * mul_bits;
     } else if (!strcmp(layers[i]->type(), "Swish")) {
-      mul_bitops += 3 * (tops[0]->count(1)) * add_bits;
+      mul_bitops += 3 * (tops[0]->count(1)) * mul_bits;
     } else if (!strcmp(layers[i]->type(), "Eltwise")) {
       if ((layers[i]->layer_param().eltwise_param().operation() 
           == caffe::EltwiseParameter_EltwiseOp_SUM)) {
