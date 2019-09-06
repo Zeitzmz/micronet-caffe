@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   if (FLAGS_model.size() == 0) {
-    LOG(INFO) << "Usage: calculate_flops [OPTIONS ...] \n\n" 
+    LOG(INFO) << "Usage: scoreing [OPTIONS ...] \n\n" 
         << "  --model             PATH: The model definition protocol buffer text file.\n"
         << "  --sparsity          FILE: Format as line \"layer_name, sparsity.\n";
     return -1;
