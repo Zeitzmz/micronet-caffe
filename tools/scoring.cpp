@@ -202,7 +202,7 @@ int main(int argc, char** argv) {
     } else if (!strcmp(layers[i]->type(), "Sigmoid")) {
       mul_bitops += 2 * (tops[0]->count(1)) * mul_bits;
       add_bitops += (tops[0]->count(1)) * mul_bits;
-    } else if (!strcmp(layers[i]->type(), "Swish")) {
+    } else if (!strcmp(layers[i]->type(), "HardSwish")) {
       mul_bitops += 3 * (tops[0]->count(1)) * mul_bits;
     } else if (!strcmp(layers[i]->type(), "Eltwise")) {
       if ((layers[i]->layer_param().eltwise_param().operation() 
