@@ -7,7 +7,7 @@
 #include "caffe/util/upgrade_proto.hpp"
 
 namespace caffe {
-
+#define PI 3.1415926
 // Return the current learning rate. The currently implemented learning rate
 // policies are as follows:
 //    - fixed: always return base_lr.
@@ -27,7 +27,12 @@ template <typename Dtype>
 Dtype SGDSolver<Dtype>::GetLearningRate() {
   Dtype rate;
   const string& lr_policy = this->param_.lr_policy();
-  if (lr_policy == "fixed") {
+  const float min_lr = this->param_.min_lr();
+  CHECK_GE(min_lr, 0.F);
+  if (this->iter_ < this->param_.warmup_interval()) {
+    float alpha = float(this->iter_) / this->param_.warmup_interval();
+    rate = this->param_.base_lr() * alpha;
+  } else if (lr_policy == "fixed") {
     rate = this->param_.base_lr();
   } else if (lr_policy == "step") {
     CHECK_GT(this->param_.stepsize(), 0);
@@ -63,6 +68,9 @@ Dtype SGDSolver<Dtype>::GetLearningRate() {
     rate = this->param_.base_lr() * (Dtype(1.) /
         (Dtype(1.) + exp(-this->param_.gamma() * (Dtype(this->iter_) -
           Dtype(this->param_.stepsize())))));
+  } else if (lr_policy == "consine") {
+    float p = (float(this->iter_) - float(this->param_.warmup_interval())) / (float(this->param_.max_iter()) - float(this->param_.warmup_interval()));
+    rate = this->param_.min_lr() + 0.5 * (this->param_.base_lr() - this->param_.min_lr()) * (1 + cos(PI * p));
   } else {
     LOG(FATAL) << "Unknown learning rate policy: " << lr_policy;
   }

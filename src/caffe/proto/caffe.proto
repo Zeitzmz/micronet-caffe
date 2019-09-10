@@ -265,6 +265,8 @@ message SolverParameter {
   }
   optional DSDPhase dsd_phase = 75;
   optional string dsd_mask_file = 76;
+  optional int32 warmup_interval = 77 [default = 0];
+  optional float min_lr = 78 [default = 0.];
 }
 
 // A message that stores the solver snapshots
@@ -408,6 +410,7 @@ message LayerParameter {
   optional InfogainLossParameter infogain_loss_param = 116;
   optional InnerProductParameter inner_product_param = 117;
   optional InputParameter input_param = 143;
+  optional LabelSmoothRegularLossParameter lsr_loss_param = 149; 
   optional LogParameter log_param = 134;
   optional LRNParameter lrn_param = 118;
   optional MemoryDataParameter memory_data_param = 119;
@@ -883,6 +886,12 @@ message InputParameter {
   // Define 1 shape to set the same shape for every top.
   // Define no shape to defer to reshaping manually.
   repeated BlobShape shape = 1;
+}
+
+
+message LabelSmoothRegularLossParameter {
+  // smoothing parameter
+  optional float eps = 1 [default = 0.1];
 }
 
 // Message that stores parameters used by LogLayer
