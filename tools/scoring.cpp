@@ -225,9 +225,9 @@ int main(int argc, char** argv) {
                 << layer_sparsity_str << ", "
                 << (mul_bitops == 0 ? "-" : std::to_string(mul_bits)) << ", " 
                 << (add_bitops == 0 ? "-" : std::to_string(add_bits)) << ", "
-                << (mul_bitops == 0 ? "-" : std::to_string(int(mul_bitops))) << ", " 
-                << (add_bitops == 0 ? "-" : std::to_string(int(add_bitops))) << ", "
-                << (params.size() == 0 ? "-" : std::to_string(int(storage_bits))) << std::endl;
+                << (mul_bitops == 0 ? "-" : std::to_string(int(mul_bitops/ 32))) << ", " 
+                << (add_bitops == 0 ? "-" : std::to_string(int(add_bitops / 32))) << ", "
+                << (params.size() == 0 ? "-" : std::to_string(int(storage_bits / 32))) << std::endl;
     }
 
     total_mul_bitops += mul_bitops;
