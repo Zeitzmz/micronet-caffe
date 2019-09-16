@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
         add_bitops += tops[0]->count(1) * add_bits;
       }
     } else if (strcmp(layers[i]->type(), "Scale") == 0) {
-      CHECK_EQ(bottoms.size(), 2);
+      // CHECK_EQ(bottoms.size(), 2);
       mul_bits = std::max(bottoms_bits[0], bottoms_bits[1]);
       mul_bitops += tops[0]->count(1) * mul_bits;
     } else if (strcmp(layers[i]->type(), "Pooling") == 0) {
