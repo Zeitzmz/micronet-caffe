@@ -44,6 +44,7 @@ void ConvolutionLayer<Dtype>::QuantizeWeights_gpu(Dtype *buffer) {
       
       Dtype step;
       caffe_copy(1, buffer, &step);
+      step /= (1 << (precision - 1)) - 1;
       Dtype min_val = -(1 << (precision - 1)) * step;  
       Dtype max_val = ((1 << (precision - 1)) - 1) * step;
 
