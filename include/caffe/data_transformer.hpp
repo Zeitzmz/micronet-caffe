@@ -125,6 +125,11 @@ class DataTransformer {
    *    cv::Mat containing the data to be transformed.
    */
   vector<int> InferBlobShape(const cv::Mat& cv_img);
+  /**
+   *  use the scale and aspect ratio augmentation from Going Deeper with Convolutions
+   *  Random crop with size 8%-100% and aspect ratio 3/4 - 4/3 (Inception-style)
+   */
+  void RandomSizeCrop(const cv::Mat &src, int crop_size, cv::Mat &dst, float low_rate, float high_rate);
 #endif  // USE_OPENCV
 
  protected:
@@ -137,6 +142,7 @@ class DataTransformer {
    *    A uniformly random integer value from ({0, 1, ..., n-1}).
    */
   virtual int Rand(int n);
+  virtual float Uniform(float a, float b);
 
   void Transform(const Datum& datum, Dtype* transformed_data);
   // Tranformation parameters

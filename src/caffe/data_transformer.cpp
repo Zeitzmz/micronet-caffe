@@ -1,9 +1,11 @@
 #ifdef USE_OPENCV
 #include <opencv2/core/core.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #endif  // USE_OPENCV
 
 #include <string>
 #include <vector>
+#include <boost/random.hpp>
 
 #include "caffe/data_transformer.hpp"
 #include "caffe/util/io.hpp"
@@ -11,6 +13,49 @@
 #include "caffe/util/rng.hpp"
 
 namespace caffe {
+
+template <typename Dtype>
+void DataTransformer<Dtype>::RandomSizeCrop(const cv::Mat &src, int crop_size, cv::Mat &dst, float low_rate, float high_rate) {
+  int i = 0;
+  while (i <=10) {
+    int area = src.cols * src.rows;
+    int target_area = static_cast<int>(Uniform(low_rate, high_rate) * area);
+
+    float aspect_ratio = Uniform(3.f/4, 4.f/3);
+    int w = std::round(sqrt(target_area) * aspect_ratio);
+    int h = std::round(sqrt(target_area) / aspect_ratio);
+    if (Rand(2)) {
+      int temp = w;
+      w = h;
+      h = temp;
+    }
+    if (h <= src.rows && w<= src.cols) {
+      int y1 = floor(Uniform(0., src.rows - h + 0.99));
+      int x1 = floor(Uniform(0., src.cols - w + 0.99));
+      cv::Rect roi(x1, y1, w, h);
+      cv::Mat crop_img = src(roi);
+      cv::resize(crop_img, dst, cv::Size(crop_size, crop_size));
+      return;
+    }
+    ++i;
+  }
+  // resize shorter edge to crop_size.
+  cv::Mat img_resized;
+  src.copyTo(img_resized);
+  int h = src.rows;
+  int w = src.cols;
+  if (!((w <= h && w >= crop_size) || (w > h && h>= crop_size))) {
+    if (w < h) {
+      cv::resize(src, img_resized, cv::Size(crop_size, int(float(h)/w * crop_size)));
+    } else {
+      cv::resize(src, img_resized, cv::Size(int(float(w)/h * crop_size), crop_size));
+    }
+  }
+  int y1 = Rand(img_resized.rows - crop_size + 1);
+  int x1 = Rand(img_resized.cols - crop_size + 1);
+  cv::Rect roi(x1, y1, crop_size, crop_size);
+  dst = img_resized(roi).clone();
+}
 
 template<typename Dtype>
 DataTransformer<Dtype>::DataTransformer(const TransformationParameter& param,
@@ -229,6 +274,7 @@ void DataTransformer<Dtype>::Transform(const cv::Mat& cv_img,
   const int img_channels = cv_img.channels();
   const int img_height = cv_img.rows;
   const int img_width = cv_img.cols;
+  const bool apply_rsc = param_.random_size_crop();
 
   // Check dimensions.
   const int channels = transformed_blob->channels();
@@ -249,8 +295,10 @@ void DataTransformer<Dtype>::Transform(const cv::Mat& cv_img,
   const bool has_mean_values = mean_values_.size() > 0;
 
   CHECK_GT(img_channels, 0);
-  CHECK_GE(img_height, crop_size);
-  CHECK_GE(img_width, crop_size);
+  if (!apply_rsc) {
+    CHECK_GE(img_height, crop_size);
+    CHECK_GE(img_width, crop_size);
+  }
 
   Dtype* mean = NULL;
   if (has_mean_file) {
@@ -278,14 +326,20 @@ void DataTransformer<Dtype>::Transform(const cv::Mat& cv_img,
     CHECK_EQ(crop_size, width);
     // We only do random crop when we do training.
     if (phase_ == TRAIN) {
-      h_off = Rand(img_height - crop_size + 1);
-      w_off = Rand(img_width - crop_size + 1);
+      if (apply_rsc) {
+        RandomSizeCrop(cv_img, crop_size, cv_cropped_img, param_.low_rate(), param_.high_rate());
+      } else {
+        h_off = Rand(img_height - crop_size + 1);
+        w_off = Rand(img_width - crop_size + 1);
+        cv::Rect roi(w_off, h_off, crop_size, crop_size);
+        cv_cropped_img = cv_img(roi);
+      }
     } else {
       h_off = (img_height - crop_size) / 2;
       w_off = (img_width - crop_size) / 2;
+      cv::Rect roi(w_off, h_off, crop_size, crop_size);
+      cv_cropped_img = cv_img(roi);
     }
-    cv::Rect roi(w_off, h_off, crop_size, crop_size);
-    cv_cropped_img = cv_img(roi);
   } else {
     CHECK_EQ(img_height, height);
     CHECK_EQ(img_width, width);
@@ -538,6 +592,18 @@ int DataTransformer<Dtype>::Rand(int n) {
   caffe::rng_t* rng =
       static_cast<caffe::rng_t*>(rng_->generator());
   return ((*rng)() % n);
+}
+
+template <typename Dtype>
+float DataTransformer<Dtype>::Uniform(float a, float b) {
+  CHECK(rng_);
+  CHECK_LE(a, b);
+  caffe::rng_t* rng =
+      static_cast<caffe::rng_t*>(rng_->generator());
+  boost::uniform_real<Dtype> random_distribution(a, caffe_nextafter<Dtype>(b));
+  boost::variate_generator<caffe::rng_t*, boost::uniform_real<Dtype> >
+      variate_generator(rng, random_distribution);
+  return variate_generator();
 }
 
 INSTANTIATE_CLASS(DataTransformer);
