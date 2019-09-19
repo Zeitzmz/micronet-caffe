@@ -66,13 +66,6 @@ void DepthwiseConvolutionLayer<Dtype>::Forward_gpu(
   int* kernel_shape_data = this->kernel_shape_.mutable_cpu_data();
   int* stride_data = this->stride_.mutable_cpu_data();
   int* pad_data = this->pad_.mutable_cpu_data();
-  if (this->fp16_setup_) {
-    caffe_float2half(this->blobs_[0]->count(), weight, this->weight_buffer_fp16_);
-    if (this->bias_term_) {
-      const Dtype* bias = this->blobs_[1]->gpu_data();
-      caffe_float2half(this->blobs_[1]->count(), bias, this->bias_buffer_fp16_);
-    }
-  }
 
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->gpu_data();
