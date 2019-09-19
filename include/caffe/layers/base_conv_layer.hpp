@@ -43,6 +43,9 @@ class BaseConvolutionLayer : public Layer<Dtype> {
       weights);
   void backward_cpu_bias(Dtype* bias, const Dtype* input);
 
+  // for quantization
+  virtual void QuantizeWeights_cpu();
+
 #ifndef CPU_ONLY
   void forward_gpu_gemm(const Dtype* col_input, const Dtype* weights,
       Dtype* output, bool skip_im2col = false);
@@ -52,6 +55,9 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   void weight_gpu_gemm(const Dtype* col_input, const Dtype* output, Dtype*
       weights);
   void backward_gpu_bias(Dtype* bias, const Dtype* input);
+
+  // for quantization
+  virtual void QuantizeWeights_gpu(Dtype* buffer=NULL);
 #endif
 
   /// @brief The spatial dimensions of the input.
@@ -95,6 +101,7 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   bool is_1x1_;
   bool force_nd_im2col_;
 
+ // for fp16 accumulation
 #ifndef CPU_ONLY
   __half* col_buffer_fp16_;
   __half* weight_buffer_fp16_;
@@ -104,7 +111,10 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   __half* one_fp16_;
   __half* zero_fp16_;
 #endif
-  bool fp16_setup_;
+  bool fp16_setup_; 
+  
+  // for quantization
+  bool quantize_setup_ ;
 
  private:
   // wrap im2col/col2im so we don't have to remember the (long) argument lists

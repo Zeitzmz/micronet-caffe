@@ -58,11 +58,21 @@ __global__ void ConvForward(const int nthreads,
 template<typename Dtype>
 void DepthwiseConvolutionLayer<Dtype>::Forward_gpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
-//  std::cout << "fp" << std::endl;
+  if (this->layer_param_.has_quantize_param()) {
+    // use top data to store temporary buffer.
+    this->QuantizeWeights_gpu(top[0]->mutable_gpu_data());
+  }
   const Dtype* weight = this->blobs_[0]->gpu_data();
   int* kernel_shape_data = this->kernel_shape_.mutable_cpu_data();
   int* stride_data = this->stride_.mutable_cpu_data();
   int* pad_data = this->pad_.mutable_cpu_data();
+  if (this->fp16_setup_) {
+    caffe_float2half(this->blobs_[0]->count(), weight, this->weight_buffer_fp16_);
+    if (this->bias_term_) {
+      const Dtype* bias = this->blobs_[1]->gpu_data();
+      caffe_float2half(this->blobs_[1]->count(), bias, this->bias_buffer_fp16_);
+    }
+  }
 
   for (int i = 0; i < bottom.size(); ++i) {
     const Dtype* bottom_data = bottom[i]->gpu_data();

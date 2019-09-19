@@ -283,8 +283,6 @@ void DataTransformer<Dtype>::Transform(const cv::Mat& cv_img,
   const int num = transformed_blob->num();
 
   CHECK_EQ(channels, img_channels);
-  CHECK_LE(height, img_height);
-  CHECK_LE(width, img_width);
   CHECK_GE(num, 1);
 
   CHECK(cv_img.depth() == CV_8U) << "Image data type must be unsigned byte";
@@ -549,8 +547,10 @@ vector<int> DataTransformer<Dtype>::InferBlobShape(const cv::Mat& cv_img) {
   const int img_width = cv_img.cols;
   // Check dimensions.
   CHECK_GT(img_channels, 0);
-  CHECK_GE(img_height, crop_size);
-  CHECK_GE(img_width, crop_size);
+  if (!param_.random_size_crop()) {
+    CHECK_GE(img_height, crop_size);
+    CHECK_GE(img_width, crop_size);
+  }
   // Build BlobShape.
   vector<int> shape(4);
   shape[0] = 1;

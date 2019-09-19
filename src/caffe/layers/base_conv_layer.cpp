@@ -180,10 +180,14 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   // Propagate gradients to the parameters (as directed by backward pass).
   this->param_propagate_down_.resize(this->blobs_.size(), true);
 
+  // for fp16 accumulation
   fp16_setup_ = false;
   if (this->layer_param_.convolution_param().fp16_accumulation()) {
-    CHECK_EQ(Caffe::mode(), Caffe::GPU) << "fp16_accumulation only ";
+    CHECK_EQ(Caffe::mode(), Caffe::GPU) << "FP16_accumulation only works in GPU mode!";
   }
+  
+  // for quantization
+  quantize_setup_ = false;
 }
 
 template <typename Dtype>
@@ -290,6 +294,12 @@ void BaseConvolutionLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     fp16_setup_ = true;
   }
 #endif
+}
+
+// for quantization
+template <typename Dtype>
+void BaseConvolutionLayer<Dtype>::QuantizeWeights_cpu() {
+  NOT_IMPLEMENTED;
 }
 
 template <typename Dtype>
