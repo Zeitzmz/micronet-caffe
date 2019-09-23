@@ -33,8 +33,10 @@ int main(int argc, char** argv){
   string name;
   float ratio;
   std::vector<std::pair<string, float> > lines;
+  int line_length = 0;
   while(fin >> name >> ratio) {
     lines.push_back(std::make_pair(name, ratio));
+    ++line_length;
   }
   
   caffe::NetParameter net_param; 
@@ -45,29 +47,29 @@ int main(int argc, char** argv){
   LOG(INFO) << "Total layers: " << layer_size;
 
   std::ofstream fout(out_file.c_str());
-  int line_id = 0;
   for (int i = 0; i < layer_size; ++i){
      caffe::LayerParameter  *current_param = net_param.mutable_layer(i);
-     if (current_param->name() == lines[line_id].first) {
-       LOG(INFO) << lines[line_id].first;
-       fout << lines[line_id].first << " ";
-       const int blob_size = current_param->blobs_size();
-       CHECK_GT(blob_size, 0);
-       caffe::BlobProto *blob = current_param->mutable_blobs(0);
-       int data_size = blob->data_size();
-       fout << data_size << " ";
-       float *data = blob->mutable_data()->mutable_data();
-       std::vector<float> copy_data(data_size);
-       caffe::caffe_abs(data_size, data, copy_data.data());
-       std::sort(copy_data.begin(), copy_data.end());
-       float threshold = copy_data[data_size * (1 - lines[line_id].second)];
-       for (int j = 0; j < data_size; ++j) {
-         if (fabs(data[j]) >= threshold) fout << "1 ";
-         else fout << "0 ";
+     for (int line_id = 0; line_id < line_length; ++line_id) {
+       if (current_param->name() == lines[line_id].first) {
+         LOG(INFO) << lines[line_id].first;
+         fout << lines[line_id].first << " ";
+         const int blob_size = current_param->blobs_size();
+         CHECK_GT(blob_size, 0);
+         caffe::BlobProto *blob = current_param->mutable_blobs(0);
+         int data_size = blob->data_size();
+         fout << data_size << " ";
+         float *data = blob->mutable_data()->mutable_data();
+         std::vector<float> copy_data(data_size);
+         caffe::caffe_abs(data_size, data, copy_data.data());
+         std::sort(copy_data.begin(), copy_data.end());
+         // float threshold = copy_data[data_size * (1 - lines[line_id].second)];
+         float threshold = copy_data[data_size * lines[line_id].second];
+         for (int j = 0; j < data_size; ++j) {
+           if (fabs(data[j]) >= threshold) fout << "1 ";
+           else fout << "0 ";
+         }
+         fout << "\n";
        }
-       fout << "\n";
-       line_id++;
-       if (line_id == lines.size()) break;
      }
   }
   fout.close();
