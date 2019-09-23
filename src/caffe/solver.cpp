@@ -206,6 +206,25 @@ void Solver<Dtype>::Step(int iters) {
   smoothed_loss_ = 0;
   iteration_timer_.Start();
 
+  // for DSD dsd training
+  if (param_.has_dsd_mask_file() && mask_.empty()) {
+    mask_file_ = param_.dsd_mask_file();
+    if (!mask_file_.empty()) {
+      CHECK(param_.has_dsd_phase())
+          << "The parameter dsd_phase must be given in solver, either SPARSE or DENSE.";
+      if (param_.dsd_phase() == SolverParameter_DSDPhase_SPARSE) {
+        GetMask(true);
+      } else if (param_.dsd_phase() == SolverParameter_DSDPhase_DENSE) {
+        GetMask(false);
+        CHECK(param_.has_fixed_param_ratio());
+        TransToDenseMask(param_.fixed_param_ratio());
+      } else {
+        LOG(ERROR) << "Unhnown phase in dsd_phase.";
+      }
+    }
+  }
+  // end DSD config
+
   while (iter_ < stop_iter) {
     // zero-init the params
     net_->ClearParamDiffs();
@@ -295,22 +314,6 @@ void Solver<Dtype>::Solve(const char* resume_file) {
   if (resume_file) {
     LOG(INFO) << "Restoring previous solver status from " << resume_file;
     Restore(resume_file);
-  }
-
-  // for DSD dsd training
-  if (param_.has_dsd_mask_file())
-    mask_file_ = param_.dsd_mask_file();
-    if (!mask_file_.empty()) {
-      CHECK(param_.has_dsd_phase())
-          << "The parameter dsd_phase must be given in solver, either SPARSE or DENSE.";
-      if (param_.dsd_phase() == SolverParameter_DSDPhase_SPARSE) {
-        GetMask(true);
-    } else if (param_.dsd_phase() == SolverParameter_DSDPhase_DENSE) {
-      GetMask(false);
-      CHECK(param_.has_fixed_param_ratio());
-      TransToDenseMask(param_.fixed_param_ratio());
-    } else
-      LOG(ERROR) << "Unhnown phase in dsd_phase.";
   }
 
   // For a network that is trained by the solver, no bottom or top vecs
