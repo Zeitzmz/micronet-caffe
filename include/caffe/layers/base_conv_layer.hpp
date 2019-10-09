@@ -116,7 +116,9 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   // for quantization
   bool quantize_setup_ ;
   bool channel_shared_ ;
-  Blob<Dtype> saved_step_;
+  Blob<float> saved_step_;
+  Blob<Dtype>* input_ptr_;
+  float input_step_;
 
  private:
   // wrap im2col/col2im so we don't have to remember the (long) argument lists

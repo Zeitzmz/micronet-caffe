@@ -8,7 +8,7 @@ namespace caffe {
 
 template <typename Dtype>
 static __global__ void QuantizeChannel(const Dtype* in, Dtype* out, 
-    int dim, int precision, bool dtype_int, Dtype* saved_step) {
+    int dim, int precision, bool dtype_int, float* saved_step) {
   __shared__ Dtype buffer[CAFFE_CUDA_NUM_THREADS];
   Dtype tmp = FLT_MIN;
   for (int i = threadIdx.x; i < dim; i += blockDim.x) {

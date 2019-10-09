@@ -263,14 +263,16 @@ void caffe_gpu_fabs(const int n, const Dtype* x, Dtype* y);
 template <typename Dtype>
 void caffe_gpu_scale(const int n, const Dtype alpha, const Dtype *x, Dtype* y);
 
+void caffe_gpu_scale(const int n, const float alpha, const __half *x, __half* y);
+
 template <typename Dtype>
 void caffe_float2half(const int N, const Dtype* x, __half* y);
 
 template <typename Dtype>
 void caffe_half2float(const int N, const __half* x, Dtype* y);
 
-template <typename Dtype>
-void caffe_gpu_scale_channel(const int n, const int spatial_dim, const Dtype* scale, __half* data);
+void quantize_scale(const int n, const int spatial_dim, const float* weight_step,
+    const float input_step, __half* data);
 
 #define DEFINE_AND_INSTANTIATE_GPU_UNARY_FUNC(name, operation) \
 template<typename Dtype> \

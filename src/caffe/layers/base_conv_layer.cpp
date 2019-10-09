@@ -5,6 +5,7 @@
 #include "caffe/layers/base_conv_layer.hpp"
 #include "caffe/util/im2col.hpp"
 #include "caffe/util/math_functions.hpp"
+#include "caffe/net.hpp"
 
 namespace caffe {
 
@@ -187,14 +188,18 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   }
   
   // for quantization
-  quantize_setup_ = false;
-
-  channel_shared_ = this->layer_param_.quantize_param().channel_shared();
-  if (channel_shared_) {
-     saved_step_.Reshape(vector<int>(1, 1));
-  } else {
-     saved_step_.Reshape(vector<int>(1, conv_out_channels_));
+  if (this->layer_param_.has_quantize_param()) {
+    channel_shared_ = this->layer_param_.quantize_param().channel_shared();
+    if (channel_shared_) {
+       saved_step_.Reshape(vector<int>(1, 1));
+    } else {
+       saved_step_.Reshape(vector<int>(1, conv_out_channels_));
+    }
+  
+    input_ptr_ = bottom[0]; 
   }
+
+  quantize_setup_ = false;
 }
 
 template <typename Dtype>
@@ -390,7 +395,13 @@ void BaseConvolutionLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
   }
 
   if (fp16_setup_) {
+    if (Net<Dtype>::activation_step.find(input_ptr_) != Net<Dtype>::activation_step.end()) {
+      input_step_ = Net<Dtype>::activation_step[input_ptr_];
+    } else {
+      input_step_ = 1;
+    }
     caffe_float2half(col_buffer_.count(), col_buff, col_buffer_fp16_);
+    caffe_gpu_scale(col_buffer_.count(), 1.f / input_step_, col_buffer_fp16_, col_buffer_fp16_);
   }
 
   for (int g = 0; g < group_; ++g) {
@@ -410,13 +421,13 @@ void BaseConvolutionLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
   if (fp16_setup_) {
     // multiply step to recover real value
     if (channel_shared_) {
-      caffe_gpu_scale_channel(conv_out_channels_ * conv_out_spatial_dim_, 
+      quantize_scale(conv_out_channels_ * conv_out_spatial_dim_, 
           conv_out_channels_ * conv_out_spatial_dim_, 
-          saved_step_.gpu_data(), output_buffer_fp16_);
+          saved_step_.gpu_data(), input_step_, output_buffer_fp16_);
     } else {
-      caffe_gpu_scale_channel(conv_out_channels_ * conv_out_spatial_dim_, 
+      quantize_scale(conv_out_channels_ * conv_out_spatial_dim_, 
           conv_out_spatial_dim_, 
-          saved_step_.gpu_data(), output_buffer_fp16_);
+          saved_step_.gpu_data(), input_step_, output_buffer_fp16_);
     }
     if (!this->bias_term_) {
       caffe_half2float(output_offset_ * group_, output_buffer_fp16_, output);

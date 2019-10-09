@@ -176,6 +176,16 @@ void caffe_gpu_scale<double>(const int n, const double alpha, const double *x,
   CUBLAS_CHECK(cublasDscal(Caffe::cublas_handle(), n, &alpha, y, 1));
 }
 
+__global__ void half_scale_kernel(const int n, const float alpha, const __half *x, __half *y) {
+  CUDA_KERNEL_LOOP(index, n) {
+    y[index] = __hmul(__float2half_rn(alpha), x[index]);
+  }
+}
+
+void caffe_gpu_scale(const int n, const float alpha, const __half *x, __half *y) {
+  half_scale_kernel<<<CAFFE_GET_BLOCKS(n), CAFFE_CUDA_NUM_THREADS>>>(n, alpha, x, y);
+}
+
 template <typename Dtype>
 __global__ void set_kernel(const int n, const Dtype alpha, Dtype* y) {
   CUDA_KERNEL_LOOP(index, n) {
@@ -512,21 +522,17 @@ void caffe_half2float(const int N, const __half* x, double* y) {
   LOG(FATAL) << "Input must be float!";
 }
 
-template <typename Dtype>
-__global__ void scale_channel_kernel(const int n, const int spatial_dim, const Dtype* scale, __half* data) {
+static __global__ void scale_kernel(const int n, const int spatial_dim, const float* weight_step, 
+    const float input_step, __half* data) {
   CUDA_KERNEL_LOOP(index, n) {
-    data[index] = __hmul(data[index], __float2half_rn(scale[index / spatial_dim]));
+    data[index] = __hmul(__hmul(data[index], __float2half_rn(weight_step[index / spatial_dim])), 
+         __float2half_rn(input_step));
   }
 }
 
-template<>
-void caffe_gpu_scale_channel<float>(const int n, const int spatial_dim, const float* scale, __half* data) {
-  scale_channel_kernel<float><<<CAFFE_GET_BLOCKS(n), CAFFE_CUDA_NUM_THREADS>>>(n, spatial_dim, scale, data);
-}
-
-template<>
-void caffe_gpu_scale_channel<double>(const int n, const int spatial_dim, const double* scale, __half* data) {
-  scale_channel_kernel<double><<<CAFFE_GET_BLOCKS(n), CAFFE_CUDA_NUM_THREADS>>>(n, spatial_dim, scale, data);
+void quantize_scale(const int n, const int spatial_dim, const float* weight_step,
+    const float input_step, __half* data) {
+  scale_kernel<<<CAFFE_GET_BLOCKS(n), CAFFE_CUDA_NUM_THREADS>>>(n, spatial_dim, weight_step, input_step, data);
 }
 
 }  // namespace caffe

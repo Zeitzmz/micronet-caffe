@@ -254,6 +254,7 @@ void Net<Dtype>::Init(const NetParameter& in_param) {
   }
   ShareWeights();
   debug_info_ = param.debug_info();
+
   LOG_IF(INFO, Caffe::root_solver()) << "Network initialization done.";
 }
 
@@ -765,6 +766,25 @@ void Net<Dtype>::CopyTrainedLayersFrom(const NetParameter& param) {
       }
       const bool kReshape = false;
       target_blobs[j]->FromProto(source_layer.blobs(j), kReshape);
+    }
+  }
+
+  // for quantization
+  if (Caffe::root_solver()) {
+    for (size_t layer_id = 0; layer_id < layers_.size(); ++layer_id) {
+      if (!strcmp(layers_[layer_id]->type(), "Quantize")) {
+        activation_step[top_vecs_[layer_id][0]] = layers_[layer_id]->blobs()[0]->cpu_data()[0]; 
+      }
+    }
+    for (size_t layer_id = 0; layer_id < layers_.size(); ++layer_id) {
+      if (!strcmp(layers_[layer_id]->type(), "Split") || !strcmp(layers_[layer_id]->type(), "Slice") 
+          || !strcmp(layers_[layer_id]->type(), "Reshape")) {
+        if (activation_step.find(bottom_vecs_[layer_id][0]) != activation_step.end()) {
+          for (size_t top_id = 0; top_id < top_vecs_[layer_id].size(); ++top_id) {
+            activation_step[top_vecs_[layer_id][top_id]] = activation_step[bottom_vecs_[layer_id][0]];
+          }
+        }
+      }   
     }
   }
 }

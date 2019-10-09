@@ -252,6 +252,9 @@ class Net {
     after_backward_.push_back(value);
   }
 
+  // for quantization
+  static map<Blob<Dtype>*, float> activation_step;
+
  protected:
   // Helpers for Init.
   /// @brief Append a new top blob to the net.
@@ -339,6 +342,8 @@ class Net {
 DISABLE_COPY_AND_ASSIGN(Net);
 };
 
+template<typename Dtype>
+map<Blob<Dtype>*, float> Net<Dtype>::activation_step;
 
 }  // namespace caffe
 
