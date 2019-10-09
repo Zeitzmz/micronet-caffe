@@ -512,5 +512,21 @@ void caffe_half2float(const int N, const __half* x, double* y) {
   LOG(FATAL) << "Input must be float!";
 }
 
+template <typename Dtype>
+__global__ void scale_channel_kernel(const int n, const int spatial_dim, const Dtype* scale, __half* data) {
+  CUDA_KERNEL_LOOP(index, n) {
+    data[index] = __hmul(data[index], __float2half_rn(scale[index / spatial_dim]));
+  }
+}
+
+template<>
+void caffe_gpu_scale_channel<float>(const int n, const int spatial_dim, const float* scale, __half* data) {
+  scale_channel_kernel<float><<<CAFFE_GET_BLOCKS(n), CAFFE_CUDA_NUM_THREADS>>>(n, spatial_dim, scale, data);
+}
+
+template<>
+void caffe_gpu_scale_channel<double>(const int n, const int spatial_dim, const double* scale, __half* data) {
+  scale_channel_kernel<double><<<CAFFE_GET_BLOCKS(n), CAFFE_CUDA_NUM_THREADS>>>(n, spatial_dim, scale, data);
+}
 
 }  // namespace caffe

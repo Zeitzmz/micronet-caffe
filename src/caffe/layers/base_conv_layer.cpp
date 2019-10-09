@@ -188,6 +188,13 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   
   // for quantization
   quantize_setup_ = false;
+
+  channel_shared_ = this->layer_param_.quantize_param().channel_shared();
+  if (channel_shared_) {
+     saved_step_.Reshape(vector<int>(1, 1));
+  } else {
+     saved_step_.Reshape(vector<int>(1, conv_out_channels_));
+  }
 }
 
 template <typename Dtype>
@@ -399,10 +406,22 @@ void BaseConvolutionLayer<Dtype>::forward_gpu_gemm(const Dtype* input,
           (Dtype)0., output + output_offset_ * g);
     }
   }
-  
-  if (fp16_setup_ && !this->bias_term_) {
-    caffe_half2float(output_offset_ * group_, output_buffer_fp16_, output);
-  }
+
+  if (fp16_setup_) {
+    // multiply step to recover real value
+    if (channel_shared_) {
+      caffe_gpu_scale_channel(conv_out_channels_ * conv_out_spatial_dim_, 
+          conv_out_channels_ * conv_out_spatial_dim_, 
+          saved_step_.gpu_data(), output_buffer_fp16_);
+    } else {
+      caffe_gpu_scale_channel(conv_out_channels_ * conv_out_spatial_dim_, 
+          conv_out_spatial_dim_, 
+          saved_step_.gpu_data(), output_buffer_fp16_);
+    }
+    if (!this->bias_term_) {
+      caffe_half2float(output_offset_ * group_, output_buffer_fp16_, output);
+    }
+  } 
 }
 
 template <typename Dtype>

@@ -8,7 +8,7 @@ namespace caffe {
 
 template <typename Dtype>
 static __global__ void QuantizeChannel(const Dtype* in, Dtype* out, 
-    int dim, int precision) {
+    int dim, int precision, bool dtype_int, Dtype* saved_step) {
   __shared__ Dtype buffer[CAFFE_CUDA_NUM_THREADS];
   Dtype tmp = FLT_MIN;
   for (int i = threadIdx.x; i < dim; i += blockDim.x) {
@@ -19,11 +19,24 @@ static __global__ void QuantizeChannel(const Dtype* in, Dtype* out,
   __syncthreads();
   ReduceMax(buffer); 
   Dtype step = buffer[0] / ((1 << (precision - 1)) - 1);
-  Dtype min_val = -(1 << (precision - 1)) * step; 
-  Dtype max_val = ((1 << (precision - 1)) - 1) * step;
-  for (int i = threadIdx.x; i < dim; i += blockDim.x) {
-    int gid = blockIdx.x * dim + i;
-    out[gid] = quantize_op(in + gid, step, min_val, max_val); 
+
+  if (dtype_int) {
+    Dtype min_val = -(1 << (precision - 1)); 
+    Dtype max_val = (1 << (precision - 1)) - 1;
+    for (int i = threadIdx.x; i < dim; i += blockDim.x) {
+      int gid = blockIdx.x * dim + i;
+      out[gid] = max(min(round(in[gid] / step), max_val), min_val);
+    }
+    if (threadIdx.x == 0) {
+      saved_step[blockIdx.x] = step;
+    }
+  } else {
+    Dtype min_val = -(1 << (precision - 1)) * step; 
+    Dtype max_val = ((1 << (precision - 1)) - 1) * step;
+    for (int i = threadIdx.x; i < dim; i += blockDim.x) {
+      int gid = blockIdx.x * dim + i;
+      out[gid] = quantize_op(in + gid, step, min_val, max_val); 
+    }
   }
 }
 
@@ -36,8 +49,13 @@ void BaseConvolutionLayer<Dtype>::QuantizeWeights_gpu(Dtype *buffer) {
     bool channel_shared = this->layer_param_.quantize_param().channel_shared();
     int count = this->blobs_[0]->count();
     Dtype* weights = this->blobs_[0]->mutable_gpu_data();
+    bool fp16_acc = this->layer_param_.convolution_param().fp16_accumulation();
 
     if (channel_shared) {
+      if (fp16_acc) {
+        LOG(FATAL) << "Not support .fp16_accumulation in channel_shared mode yet!";
+      }
+
       CHECK_NOTNULL(buffer);
       GetAbsMax<Dtype><<<CAFFE_GET_BLOCKS(count/4), CAFFE_CUDA_NUM_THREADS>>>(
           weights, count, buffer, buffer);
@@ -52,11 +70,12 @@ void BaseConvolutionLayer<Dtype>::QuantizeWeights_gpu(Dtype *buffer) {
       Quantize<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
           weights, count, step, min_val, max_val, weights);
       CUDA_POST_KERNEL_CHECK;
+
     } else {
       int dim = this->blobs_[0]->count(1);
       int n = this->blobs_[0]->shape(0);
       QuantizeChannel<<<n, CAFFE_CUDA_NUM_THREADS>>>(
-          weights, weights, dim, precision); 
+          weights, weights, dim, precision, fp16_acc, saved_step_.mutable_gpu_data()); 
       CUDA_POST_KERNEL_CHECK;
     }
     quantize_setup_ = true;

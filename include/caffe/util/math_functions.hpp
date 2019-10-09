@@ -269,6 +269,9 @@ void caffe_float2half(const int N, const Dtype* x, __half* y);
 template <typename Dtype>
 void caffe_half2float(const int N, const __half* x, Dtype* y);
 
+template <typename Dtype>
+void caffe_gpu_scale_channel(const int n, const int spatial_dim, const Dtype* scale, __half* data);
+
 #define DEFINE_AND_INSTANTIATE_GPU_UNARY_FUNC(name, operation) \
 template<typename Dtype> \
 __global__ void name##_kernel(const int n, const Dtype* x, Dtype* y) { \
