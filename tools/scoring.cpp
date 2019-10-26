@@ -194,16 +194,28 @@ int main(int argc, char** argv) {
         LOG(FATAL) << "Not Implemented for MAX Pooling!";
       }
       else if(pool_method == 1) { // ave pooling
+        mul_bits = 32;
+        add_bits = 32;
         mul_bitops += tops[0]->count(1) * mul_bits;
         add_bitops += (ksize * ksize - 1) * tops[0]->count(1) * add_bits;
+        // mul_bitops += tops[0]->count(1) * mul_bits;
+        // add_bitops += (ksize * ksize - 1) * tops[0]->count(1) * add_bits;
       }
     } else if (!strcmp(layers[i]->type(), "ReLU")) {
       mul_bitops += (tops[0]->count(1)) * mul_bits;
     } else if (!strcmp(layers[i]->type(), "Sigmoid")) {
+      mul_bits = 32;
+      add_bits = 32;
       mul_bitops += 2 * (tops[0]->count(1)) * mul_bits;
       add_bitops += (tops[0]->count(1)) * mul_bits;
+      // mul_bitops += 2 * (tops[0]->count(1)) * mul_bits;
+      // add_bitops += (tops[0]->count(1)) * mul_bits;
     } else if (!strcmp(layers[i]->type(), "HardSwish")) {
-      mul_bitops += 3 * (tops[0]->count(1)) * mul_bits;
+      mul_bits = 32;
+      add_bits = 32;
+      mul_bitops += 4 * (tops[0]->count(1)) * mul_bits;
+      add_bitops += (tops[0]->count(1)) * mul_bits;
+      // mul_bitops += 3 * (tops[0]->count(1)) * mul_bits;
     } else if (!strcmp(layers[i]->type(), "Eltwise")) {
       if ((layers[i]->layer_param().eltwise_param().operation() 
           == caffe::EltwiseParameter_EltwiseOp_SUM)) {
